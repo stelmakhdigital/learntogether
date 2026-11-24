@@ -149,7 +149,8 @@ export const RAW_TOOL_SCHEMAS: readonly RawTool[] = [
 				step_id: idField,
 				kind: {
 					type: "string",
-					enum: ["single_choice", "multi_choice", "free_recall", "predict", "diagnose"],
+					// Values mirror the CHECK constraint on step_check.kind in 001_init.sql.
+				enum: ["single_choice", "multi_choice", "free_recall", "predict", "find_error", "transfer"],
 				},
 				question: { type: "string", minLength: 8 },
 				options: {
@@ -188,7 +189,8 @@ export const RAW_TOOL_SCHEMAS: readonly RawTool[] = [
 			required: ["claim_id", "source"],
 			properties: {
 				claim_id: idField,
-				source: { type: "string", enum: ["check_failed", "contradiction", "stale_confidence"] },
+				// Values mirror the CHECK constraint on doubt.source in 001_init.sql.
+				source: { type: "string", enum: ["check_failed", "contradicted", "missed_transfer", "calibration"] },
 				note: { type: "string", minLength: 1, description: "Что именно вызывает сомнение." },
 			},
 		},

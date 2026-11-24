@@ -54,7 +54,7 @@
 
 | Инструмент | Назначение | Ключевые поля |
 | --- | --- | --- |
-| `check_understanding` | проверка шага | `step_id`, `kind` (`single_choice`, `multi_choice`, `free_recall`, `predict`, `diagnose`), `question`, `options[]`, `answer`, `why`, `ask_confidence` |
+| `check_understanding` | проверка шага | `step_id`, `kind` (`single_choice`, `multi_choice`, `free_recall`, `predict`, `find_error`, `transfer`), `question`, `options[]`, `answer`, `why`, `ask_confidence` |
 | `ask_learner` | открытый вопрос без эталона: замер, уточнение цели, реакция на шаг | `kind` (`probe`, `clarify_goal`, `reflection`), `question`, `expected` (`one_line`, `paragraph`, `list`) |
 
 Фаза замера:
