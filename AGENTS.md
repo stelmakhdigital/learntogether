@@ -25,15 +25,17 @@
 
 ```
 pnpm install
-pnpm test          # unit + contract, fake provider, без сети
-pnpm test:e2e      # Playwright, только на PR с лейблом или nightly
+pnpm verify        # lint + check:layers + typecheck + test, одно и то же в CI
 pnpm lint
+pnpm check:layers  # запрет обратных зависимостей между пакетами
 pnpm typecheck
-pnpm build
-pnpm dev           # сервер + UI на localhost
+pnpm test          # node --test, без сети и без живых серверов моделей
 ```
 
-Точный список появится на этапе 1 и обновляется здесь при изменении.
+Node берётся из `.node-version` (24.22.3, как в Electron). Системный Node 22 занят
+самим агентом разработки, для проекта его использовать нельзя: `export
+PATH=/home/arka/.local/share/node-24/bin:$PATH`. Тесты на TypeScript запускаются
+нативно, сборка перед тестами не нужна.
 
 ## Как вести работу
 
@@ -103,4 +105,7 @@ OpenAI. Локальных серверов моделей (Ollama, llama.cpp, v
 всё, что касается живого сервера, проверять на этапе 2.
 
 Ubuntu 24.04.5, glibc 2.39 (пол для готовых бинарников better-sqlite3 — 2.34).
-Electron 45.5.0 собран на Node 24.22.3; electron-builder 26.18.0, Playwright 1.65.1.
+Electron 45.5.0 собран на Node 24.22.3 (проверено: `better-sqlite3` 13.2.0 загружается в нём через
+`ELECTRON_RUN_AS_NODE=1`, FTS5 работает, `THREADSAFE=2`); electron-builder 26.18.0,
+Playwright 1.65.1. TypeScript 7.0.2 — последний, но `typescript-eslint` требует `<6.1`, поэтому
+в проекте 5.9.3. ESLint 9 объявлен неподдерживаемым, взят 10.15.0.

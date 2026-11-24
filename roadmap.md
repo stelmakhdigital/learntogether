@@ -16,7 +16,7 @@
 - [x] Настройки electron-builder: Linux и Windows собираются с Linux-раннера (Windows через wine), macOS — только на macOS-раннере; unsigned проходит; AppImage обязателен toolset 1.0.3 из-за FUSE2 на Ubuntu 24.04+
 - [x] Обновление без подписи: работает на Windows (nsis) и Linux (AppImage, deb), на macOS не работает вовсе
 - [ ] Матрица отвергаемых ключей JSON Schema у Anthropic и точный текст ошибок OpenAI strict — docs.claude.com не резолвится, platform.openai.com отдаёт 403; проверять на живом ключе на этапе 2
-- [ ] Загрузка `better-sqlite3` внутри собранного Electron — один `require()` в smoke-тесте на этапе 1 (вывод о совместимости N-API 10 с Electron 45 получен из версий, не живым запуском)
+- [x] Загрузка `better-sqlite3` внутри Electron — проверено живьём: Electron 45.5.0 с `ELECTRON_RUN_AS_NODE=1`, SQLite 3.54.1, FTS5 и поиск по-русски работают, `THREADSAFE=2`. CI-проверка появится вместе с Electron-зависимостью на этапе 8
 - [ ] Реальное wall-time unit и e2e на этом монорепо — цифры до появления кода остаются оценками
 - [x] Наличие `/embeddings` у целевых серверов: OpenAI-совместимый `/v1/embeddings` есть у Ollama, vLLM, LM Studio и llama.cpp; у llama.cpp `--embedding` отключает чат в том же инстансе — отсюда отдельный процесс под эмбеддинги
 - [ ] Бенч эмбеддингов на этом железе: скорость `llama-server --embedding --pooling cls` на батчах по 8 и 64, время brute-force поиска по 50k векторов в SQLite — этап 4
