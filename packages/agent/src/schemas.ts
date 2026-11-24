@@ -150,7 +150,7 @@ export const RAW_TOOL_SCHEMAS: readonly RawTool[] = [
 				kind: {
 					type: "string",
 					// Values mirror the CHECK constraint on step_check.kind in 001_init.sql.
-				enum: ["single_choice", "multi_choice", "free_recall", "predict", "find_error", "transfer"],
+					enum: ["single_choice", "multi_choice", "free_recall", "predict", "find_error", "transfer"],
 				},
 				question: { type: "string", minLength: 8 },
 				options: {
