@@ -1,0 +1,212 @@
+// HTTP surface of the server process: JSON routes over SQLite plus an SSE feed
+// of transcript entries. Persistence stays in @learntogether/data; this layer
+// only translates between the wire and the repositories.
+
+import { timingSafeEqual } from "node:crypto";
+import Fastify, { type FastifyError, type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
+import { createSession, entries, exportAll, getSession, searchEntries, SESSION_KINDS } from "@learntogether/data";
+// openDb is referenced only to name the handle type, hence a type import.
+import type { openDb, SessionKind } from "@learntogether/data";
+import { type Config } from "./config.ts";
+
+/** The handle as data opens it, so this package does not need better-sqlite3 types. */
+type Db = ReturnType<typeof openDb>;
+
+export interface AppDeps {
+	db: Db;
+	config: Config;
+	/** Destination for internals (stack traces, service messages). Never the token. */
+	log: (message: string) => void;
+}
+
+const POLL_MS = 200;
+const HEARTBEAT_MS = 15_000;
+const ENTRY_PAGE = 200;
+const LIMIT_MAX = 500;
+
+function bearerOf(header: string | undefined): string | null {
+	const match = /^Bearer (.+)$/i.exec(header ?? "");
+	return match?.[1] ?? null;
+}
+
+/** Compared without an early byte-by-byte return: response time must not leak
+ *  how much of the token was already right. */
+function tokenMatches(given: string, expected: string): boolean {
+	const a = Buffer.from(given);
+	const b = Buffer.from(expected);
+	return a.length === b.length && timingSafeEqual(a, b);
+}
+
+function isHealth(request: { method?: string; url: string }): boolean {
+	return request.method === "GET" && (request.url === "/healthz" || request.url.startsWith("/healthz?"));
+}
+
+type IntParse = { ok: true; value: number | null } | { ok: false; error: string };
+
+function parseUnsigned(raw: unknown, name: string, max: number): IntParse {
+	if (raw === undefined || raw === "") return { ok: true, value: null };
+	const text = String(raw);
+	const value = Number(text);
+	if (!Number.isInteger(value) || value < 0 || value > max) {
+		return { ok: false, error: `${name} должен быть целым числом от 0 до ${max}, получено ${text}` };
+	}
+	return { ok: true, value };
+}
+
+/** SSE frame: one JSON payload per `data:` group. */
+function dataFrame(payload: unknown): string {
+	return `data: ${JSON.stringify(payload)}\n\n`;
+}
+
+export function createApp(deps: AppDeps): FastifyInstance {
+	const { db, config, log } = deps;
+	const app = Fastify({ logger: false });
+
+	// Access gate. The token value never reaches the reply or the log.
+	app.addHook("onRequest", async (request, reply) => {
+		if (config.accessToken === null || isHealth(request)) return;
+		const given = bearerOf(request.headers.authorization);
+		if (given !== null && tokenMatches(given, config.accessToken)) return;
+		await reply
+			.code(401)
+			.headers({ "www-authenticate": 'Bearer realm="learntogether", error="invalid_token"' })
+			.send({ error: "нужен токен" });
+	});
+
+	app.setErrorHandler((error: FastifyError, request: FastifyRequest, reply: FastifyReply) => {
+		const status = typeof error.statusCode === "number" && error.statusCode >= 400 ? error.statusCode : 500;
+		log(`${request.method} ${request.url}: ${error.stack ?? error.message}`);
+		reply.code(status).send({ error: error.message });
+	});
+
+	app.get("/healthz", () => {
+		const row = db.prepare("SELECT COUNT(*) AS n FROM session").get() as { n: number };
+		return { ok: true, version: "0.0.0", db: row.n };
+	});
+
+	app.post<{ Body: { kind?: unknown; modelTeacher?: unknown } }>("/sessions", (request, reply) => {
+		const body = request.body;
+		if (body === null || typeof body !== "object" || Array.isArray(body)) {
+			return reply.code(400).send({ error: "нужно тело JSON с полем kind" });
+		}
+		const { kind, modelTeacher } = body as { kind?: unknown; modelTeacher?: unknown };
+		if (typeof kind !== "string" || !(SESSION_KINDS as readonly string[]).includes(kind)) {
+			return reply.code(400).send({ error: `неизвестный kind, допустимо: ${SESSION_KINDS.join(", ")}` });
+		}
+		if (modelTeacher !== undefined && typeof modelTeacher !== "string") {
+			return reply.code(400).send({ error: "modelTeacher должен быть строкой" });
+		}
+		const id = createSession(db, { kind: kind as SessionKind, ...(modelTeacher ? { modelTeacher } : {}) });
+		return reply.code(201).send({ id });
+	});
+
+	app.get<{ Params: { id: string } }>("/sessions/:id", (request, reply) => {
+		const session = getSession(db, request.params.id);
+		if (!session) return reply.code(404).send({ error: `сессии ${request.params.id} нет` });
+		return session;
+	});
+
+	app.get<{ Params: { id: string }; Querystring: { afterOrdinal?: string; limit?: string } }>(
+		"/sessions/:id/entries",
+		(request, reply) => {
+			const { id } = request.params;
+			if (!getSession(db, id)) return reply.code(404).send({ error: `сессии ${id} нет` });
+			const after = parseUnsigned(request.query.afterOrdinal, "afterOrdinal", Number.MAX_SAFE_INTEGER);
+			if (!after.ok) return reply.code(400).send({ error: after.error });
+			const limit = parseUnsigned(request.query.limit, "limit", LIMIT_MAX);
+			if (!limit.ok) return reply.code(400).send({ error: limit.error });
+			return {
+				entries: entries(db, id, {
+					...(after.value !== null ? { afterOrdinal: after.value } : {}),
+					...(limit.value !== null && limit.value > 0 ? { limit: limit.value } : {}),
+				}),
+			};
+		},
+	);
+
+	// Transcript feed. An ordinal cursor over an append-only table (D-020) lets a
+	// reconnecting client resume without gaps and without re-reading the session.
+	app.get<{ Params: { id: string }; Querystring: { afterOrdinal?: string } }>(
+		"/sessions/:id/stream",
+		(request, reply) => {
+			const { id } = request.params;
+			if (!getSession(db, id)) return reply.code(404).send({ error: `сессии ${id} нет` });
+			const after = parseUnsigned(request.query.afterOrdinal, "afterOrdinal", Number.MAX_SAFE_INTEGER);
+			if (!after.ok) return reply.code(400).send({ error: after.error });
+
+			reply.hijack();
+			const res = reply.raw;
+			res.writeHead(200, {
+				"content-type": "text/event-stream",
+				"cache-control": "no-cache",
+				connection: "keep-alive",
+			});
+
+			let cursor = after.value ?? 0;
+			let done = false;
+			let poll: ReturnType<typeof setInterval> | undefined;
+			let beat: ReturnType<typeof setInterval> | undefined;
+
+			const stop = () => {
+				clearInterval(poll);
+				clearInterval(beat);
+				poll = undefined;
+				beat = undefined;
+			};
+			const flush = () => {
+				for (const entry of entries(db, id, { afterOrdinal: cursor, limit: ENTRY_PAGE })) {
+					cursor = entry.ordinal;
+					res.write(dataFrame(entry));
+				}
+			};
+			const finish = (withEnd: boolean) => {
+				if (done) return;
+				done = true;
+				stop();
+				request.raw.removeListener("close", onClientClose);
+				if (withEnd) res.write("event: end\ndata: {}\n\n");
+				res.end();
+			};
+			// The client is gone: drop the timers before anything else, otherwise the
+			// poll keeps a live handle and reads the database forever.
+			const onClientClose = () => {
+				done = true;
+				stop();
+			};
+			const tick = () => {
+				flush();
+				const session = getSession(db, id);
+				if (session === undefined || session.state === "closed") {
+					flush();
+					finish(true);
+				}
+			};
+
+			request.raw.on("close", onClientClose);
+			poll = setInterval(tick, POLL_MS);
+			beat = setInterval(() => res.write(": ping\n\n"), HEARTBEAT_MS);
+			tick();
+		},
+	);
+
+	app.post("/export", () => {
+		const written = exportAll(db, config.exportDir, new Date().toISOString());
+		log(`экспорт: ${written.length} файлов в ${config.exportDir}`);
+		return { files: written.length, dir: config.exportDir };
+	});
+
+	app.get<{ Querystring: { q?: string } }>("/search", (request, reply) => {
+		const query = (request.query.q ?? "").trim();
+		if (query === "") return reply.code(400).send({ error: "нужен непустой запрос q" });
+		try {
+			return { hits: searchEntries(db, query) };
+		} catch (error) {
+			// FTS5 syntax comes straight from the query string, so a malformed
+			// expression is the caller's mistake, not a server failure.
+			const reason = error instanceof Error ? error.message : String(error);
+			return reply.code(400).send({ error: `запрос не разобран: ${reason}` });
+		}
+	});
+
+	return app;
+}

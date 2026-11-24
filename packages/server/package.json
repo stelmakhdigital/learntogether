@@ -8,6 +8,11 @@
 	},
 	"dependencies": {
 		"@learntogether/data": "workspace:*",
-		"@learntogether/domain": "workspace:*"
+		"@learntogether/domain": "workspace:*",
+		"fastify": "5.12.8",
+		"better-sqlite3": "13.2.0"
+	},
+	"devDependencies": {
+		"@types/better-sqlite3": "7.6.13"
 	}
 }

@@ -22,6 +22,8 @@ export interface Config {
 	accessToken: string | null;
 	/** Settings file the values came from, or null when defaults are used. */
 	source: string | null;
+	/** Directory the readable export is written to, derived from the data dir. */
+	exportDir: string;
 }
 
 export const DEFAULT_PORT = 8765;
@@ -60,7 +62,8 @@ export function loadConfig(
 	read: (file: string) => string = (file) => readFileSync(file, "utf8"),
 	exists: (file: string) => boolean = existsSync,
 ): Config {
-	const file = path.join(dataDir(env), "settings.json");
+	const paths = pathsFor(env);
+	const file = path.join(paths.dir, "settings.json");
 	let stored: Record<string, unknown> = {};
 	let source: string | null = null;
 	if (exists(file)) {
@@ -102,6 +105,7 @@ export function loadConfig(
 		language,
 		accessToken: token === undefined || token === "" ? null : token,
 		source,
+		exportDir: paths.exportDir,
 	};
 }
 
