@@ -1,0 +1,25 @@
+{
+	"name": "learntogether",
+	"version": "0.0.0",
+	"private": true,
+	"description": "Local-first understanding trainer: probing, minimal dependency plan, one reasoning step at a time, knowledge graph, spaced practice.",
+	"license": "AGPL-3.0-only",
+	"type": "module",
+	"engines": {
+		"node": ">=24.0.0 <25.0.0"
+	},
+	"packageManager": "pnpm@10.34.9",
+	"scripts": {
+		"test": "node --test",
+		"typecheck": "tsc --noEmit",
+		"lint": "eslint .",
+		"check:layers": "node scripts/check-layers.mjs",
+		"verify": "pnpm lint && pnpm check:layers && pnpm typecheck && pnpm test"
+	},
+	"devDependencies": {
+		"@types/node": "24.19.2",
+		"eslint": "10.15.0",
+		"typescript": "5.9.3",
+		"typescript-eslint": "8.74.0"
+	}
+}
