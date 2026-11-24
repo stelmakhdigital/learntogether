@@ -44,7 +44,18 @@ export interface AssistantResponse {
 	blocks: ResponseBlock[];
 	stop: StopReason;
 	usage: Usage;
+	/** Saved wire trace, for diagnostics (tool-contracts, «Внутренний формат»). */
+	rawRef?: string;
 }
+
+/** Token budget for one call. Required, never defaulted: an unknown context
+ *  window is measured or asked about, not replaced by a constant (D-006). */
+export interface Budget {
+	input: number;
+	output: number;
+}
+
+export type ReasoningLevel = "none" | "low" | "medium" | "high";
 
 /** Minimal request shape; canonical tool schema is enforced upstream (agent layer). */
 export interface ToolDefinition {
@@ -62,6 +73,8 @@ export interface Request {
 	system: string;
 	messages: Message[];
 	tools: ToolDefinition[];
+	budget: Budget;
+	reasoningLevel: ReasoningLevel;
 }
 
 /** Normalized transport deltas. Empty and out-of-order optionals are the norm
@@ -72,8 +85,10 @@ export type TransportEvent =
 	| { type: "thinking_delta"; text: string }
 	| { type: "tool_call_delta"; index: number; id?: string; name?: string; args_part?: string }
 	| { type: "usage"; usage: Usage }
-	| { type: "done"; stop: StopReason; usage: Usage };
+	| { type: "done"; stop: StopReason; usage: Usage; error?: string };
 
+/** A transport only yields normalized events; assembling an `AssistantResponse`
+ *  is the accumulator's job and cancellation belongs to the caller. */
 export interface Transport {
-	stream(request: Request, onEvent: (event: TransportEvent) => void): Promise<AssistantResponse>;
+	stream(request: Request, signal?: AbortSignal): AsyncIterable<TransportEvent>;
 }
