@@ -21,7 +21,7 @@ function collect(dir) {
 		const full = join(dir, entry);
 		if (entry === "node_modules" || entry === "dist") continue;
 		if (statSync(full).isDirectory()) collect(full);
-		else if (full.endsWith(".ts")) sources.push(full);
+		else if (full.endsWith(".ts") || full.endsWith(".tsx")) sources.push(full);
 	}
 }
 

@@ -1,7 +1,8 @@
 {
 	"compilerOptions": {
 		"target": "ES2024",
-		"lib": ["ES2024"],
+		"lib": ["ES2024", "DOM", "DOM.Iterable"],
+		"jsx": "react-jsx",
 		"module": "NodeNext",
 		"moduleResolution": "NodeNext",
 		"strict": true,
@@ -16,6 +17,6 @@
 		"noEmit": true,
 		"types": ["node"]
 	},
-	"include": ["packages/*/src/**/*.ts", "packages/*/test/**/*.ts", "apps/*/src/**/*.ts"],
+	"include": ["packages/*/src/**/*.ts", "packages/*/test/**/*.ts", "apps/*/src/**/*.ts", "apps/*/src/**/*.tsx"],
 	"exclude": ["node_modules", "**/dist"]
 }

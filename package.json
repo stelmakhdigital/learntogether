@@ -10,11 +10,12 @@
 	},
 	"packageManager": "pnpm@10.34.9",
 	"scripts": {
-		"test": "node --test",
+		"test": "node --test packages/*/test/*.test.ts apps/*/test/*.test.ts",
 		"typecheck": "tsc --noEmit",
 		"lint": "eslint .",
 		"check:layers": "node scripts/check-layers.mjs",
-		"verify": "pnpm lint && pnpm check:layers && pnpm typecheck && pnpm test"
+		"verify": "pnpm lint && pnpm check:layers && pnpm typecheck && pnpm test",
+		"build": "pnpm -r --if-present build"
 	},
 	"devDependencies": {
 		"@types/node": "24.19.2",

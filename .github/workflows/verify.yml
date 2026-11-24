@@ -32,3 +32,4 @@ jobs:
       - run: node scripts/check-layers.mjs
       - run: pnpm typecheck
       - run: pnpm test
+      - run: pnpm build
