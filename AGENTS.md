@@ -59,6 +59,9 @@ PATH=/home/arka/.local/share/node-24/bin:$PATH`. Тесты на TypeScript за
 - Состояния EMPTY, LOADING, PARTIAL, ERROR, OFFLINE, LONG-CONTENT обязательны на экране;
   экран без них не принимается.
 - Никакого кода «на будущее». Нет запроса — нет flexibility.
+- TypeScript только вырезается (`node --test`), а не компилируется: не делать
+  parameter properties в конструкторах (`constructor(private readonly x)`) —
+  рантайм на них падает, а `tsc` этого не видит.
 - Каждое нестандартное упрощение помечать `shortcut: <ограничение>, <когда менять>`.
 - Проверять, а не предполагать. Факт без проверки в комментарии или доке не оставлять.
 
