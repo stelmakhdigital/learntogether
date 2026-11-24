@@ -81,12 +81,18 @@ importers:
 
   packages/server:
     dependencies:
+      '@learntogether/agent':
+        specifier: workspace:*
+        version: link:../agent
       '@learntogether/data':
         specifier: workspace:*
         version: link:../data
       '@learntogether/domain':
         specifier: workspace:*
         version: link:../domain
+      '@learntogether/models':
+        specifier: workspace:*
+        version: link:../models
       better-sqlite3:
         specifier: 13.2.0
         version: 13.2.0

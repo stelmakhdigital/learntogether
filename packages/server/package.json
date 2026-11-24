@@ -7,8 +7,10 @@
 		".": "./src/index.ts"
 	},
 	"dependencies": {
+		"@learntogether/agent": "workspace:*",
 		"@learntogether/data": "workspace:*",
 		"@learntogether/domain": "workspace:*",
+		"@learntogether/models": "workspace:*",
 		"fastify": "5.12.8",
 		"better-sqlite3": "13.2.0"
 	},
