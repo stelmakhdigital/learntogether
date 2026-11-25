@@ -57,6 +57,9 @@ export async function start(env: NodeJS.ProcessEnv = process.env): Promise<numbe
 		return 1;
 	}
 
+	// No turn runner here yet: a transport has to be probed against a real server
+	// first, and inventing one from a config file would be the silent fallback we
+	// refused in D-006. Until adapters land, /sessions/:id/turn answers 503.
 	const app = createApp({ db, config, log });
 
 	const stopSignal = (signal: string) => {

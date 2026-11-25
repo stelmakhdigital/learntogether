@@ -4,10 +4,11 @@
 
 import { timingSafeEqual } from "node:crypto";
 import Fastify, { type FastifyError, type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
-import { createSession, entries, exportAll, getSession, searchEntries, SESSION_KINDS } from "@learntogether/data";
+import { appendEntry, createSession, entries, exportAll, getSession, searchEntries, SESSION_KINDS } from "@learntogether/data";
 // openDb is referenced only to name the handle type, hence a type import.
 import type { openDb, SessionKind } from "@learntogether/data";
 import { type Config } from "./config.ts";
+import type { TurnRunner } from "./turn.ts";
 
 /** The handle as data opens it, so this package does not need better-sqlite3 types. */
 type Db = ReturnType<typeof openDb>;
@@ -17,6 +18,9 @@ export interface AppDeps {
 	config: Config;
 	/** Destination for internals (stack traces, service messages). Never the token. */
 	log: (message: string) => void;
+	/** Absent until a model transport is configured: turn routes then answer 503
+	 *  instead of pretending a lesson can run. */
+	turn?: TurnRunner;
 }
 
 const POLL_MS = 200;
@@ -188,6 +192,77 @@ export function createApp(deps: AppDeps): FastifyInstance {
 			tick();
 		},
 	);
+
+	// Turn routes. The turn itself is started by the client with the learner's
+	// message; live events go to a separate stream (D-044), while the transcript
+	// keeps the durable copy.
+	app.post<{ Params: { id: string }; Body: { text?: unknown } }>("/sessions/:id/turn", (request, reply) => {
+		const runner = deps.turn;
+		if (runner === undefined) return reply.code(503).send({ error: "транспорт модели не настроен" });
+		const { id } = request.params;
+		if (!getSession(db, id)) return reply.code(404).send({ error: `сессии ${id} нет` });
+		const body = request.body as { text?: unknown } | null;
+		const text = typeof body?.text === "string" ? body.text.trim() : "";
+		if (text === "") return reply.code(400).send({ error: "нужно сообщение ученика в поле text" });
+
+		try {
+			appendEntry(db, { kind: "text", role: "learner", sessionId: id, text });
+			// Prompt and budget are the composition root's business; the route only
+			// carries the learner's words.
+			const handle = runner.start(id, text);
+			handle.done.catch((error: unknown) => {
+				log(`ход ${handle.turnId}: ${error instanceof Error ? error.message : String(error)}`);
+			});
+			return reply.code(202).send({ turnId: handle.turnId, sessionId: id });
+		} catch (error) {
+			return reply.code(409).send({ error: error instanceof Error ? error.message : String(error) });
+		}
+	});
+
+	app.post<{ Params: { id: string } }>("/sessions/:id/turn/cancel", (request, reply) => {
+		const runner = deps.turn;
+		if (runner === undefined) return reply.code(503).send({ error: "транспорт модели не настроен" });
+		const handle = runner.get(request.params.id);
+		if (handle === undefined) return reply.code(404).send({ error: "хода нет" });
+		handle.cancel();
+		return { canceled: handle.turnId };
+	});
+
+	// Live events of the running turn. Not a source of truth: after a
+	// disconnect the client resumes the transcript stream instead.
+	app.get<{ Params: { id: string } }>("/sessions/:id/turn/stream", (request, reply) => {
+		const runner = deps.turn;
+		if (runner === undefined) return reply.code(503).send({ error: "транспорт модели не настроен" });
+		const handle = runner.get(request.params.id);
+		if (handle === undefined) return reply.code(404).send({ error: "хода нет" });
+
+		reply.hijack();
+		const res = reply.raw;
+		res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
+
+		let closed = false;
+		// Assigned after subscribe: a replay can reach `finished` synchronously, and
+		// closing during that replay must not touch a binding that is not there yet.
+		let unsubscribe: () => unknown = () => undefined;
+		const close = () => {
+			if (closed) return;
+			closed = true;
+			unsubscribe();
+			res.end();
+		};
+		unsubscribe = handle.subscribe((event) => {
+			res.write(dataFrame(event));
+			if (event.type === "finished") close();
+		});
+		request.raw.on("close", close);
+		handle.done.then(
+			() => {
+				close();
+			},
+			() => close(),
+		);
+		return undefined;
+	});
 
 	app.post("/export", () => {
 		const written = exportAll(db, config.exportDir, new Date().toISOString());
