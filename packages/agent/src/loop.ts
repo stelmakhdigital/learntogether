@@ -1,7 +1,8 @@
 // One turn of the teaching loop: ask the model, run what it asked for, feed the
 // results back, stop when it stops. Everything the caller must see goes through
 // `onEvent` — text, thinking, calls, refusals — and exactly one `finished`
-// event closes the turn on every path, including cancellation (docs/tool-contracts.md).
+// event closes the turn on every path: cancellation, an error event, or an
+// adapter that throws instead of reporting one (docs/tool-contracts.md, D-054).
 
 import {
 	createToolCallAccumulator,
@@ -23,7 +24,9 @@ export type AgentEvent =
 	| { type: "tool_call"; id: string; name: string; args: Record<string, unknown> }
 	| { type: "tool_result"; id: string; name: string; ok: boolean; content: string }
 	| { type: "tool_rejected"; id: string; name: string; reason: string }
-	| { type: "finished"; stop: StopReason };
+	/** `error` carries the failure in the words of whoever reported it — the model
+	 *  server text of a `done` event or of a thrown adapter — never our own wording. */
+	| { type: "finished"; stop: StopReason; error?: string };
 
 export interface CallOutcome {
 	id: string;
@@ -68,11 +71,18 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
 	const calls: CallOutcome[] = [];
 	const rejects = new Map<string, number>();
 	let steps = 0;
+	let closed = false;
 
 	const emit = (event: AgentEvent): void => onEvent?.(event);
-	// Exactly one `finished` on every path: the caller closes the stream on it.
-	const finish = (stop: StopReason): TurnResult => {
-		emit({ type: "finished", stop });
+	// Exactly one `finished` on every path: the caller closes the stream on it. The
+	// guard is what keeps it true when the throw arrives after we already left the
+	// loop (a failing iterator.return()), when it arrives on top of a `finished` we
+	// gave out for a cancellation, or when both error paths meet in one step.
+	const finish = (stop: StopReason, error?: string): TurnResult => {
+		if (!closed) {
+			closed = true;
+			emit(error === undefined ? { type: "finished", stop } : { type: "finished", stop, error });
+		}
 		return { blocks, calls, steps, stop, text: textParts.join(""), thinking: thinkingParts.join("") };
 	};
 
@@ -83,29 +93,43 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
 		const stepText: string[] = [];
 		const stepThinking: string[] = [];
 		let stop: StopReason = "end";
+		// Failure text of a `done` event, kept in the words it arrived in.
+		let failure: string | undefined;
 
-		for await (const event of transport.stream(request, signal)) {
-			if (signal?.aborted) return finish("error");
-			accumulator.apply(event);
-			if (event.type === "text_delta") {
-				stepText.push(event.text);
-				textParts.push(event.text);
-				emit({ type: "text", text: event.text });
-			} else if (event.type === "thinking_delta") {
-				stepThinking.push(event.text);
-				thinkingParts.push(event.text);
-				emit({ type: "thinking", text: event.text });
-			} else if (event.type === "done") {
-				stop = event.stop;
+		try {
+			for await (const event of transport.stream(request, signal)) {
+				if (signal?.aborted) return finish("error");
+				accumulator.apply(event);
+				if (event.type === "text_delta") {
+					stepText.push(event.text);
+					textParts.push(event.text);
+					emit({ type: "text", text: event.text });
+				} else if (event.type === "thinking_delta") {
+					stepThinking.push(event.text);
+					thinkingParts.push(event.text);
+					emit({ type: "thinking", text: event.text });
+				} else if (event.type === "done") {
+					stop = event.stop;
+					failure = event.error;
+				}
 			}
+		} catch (error) {
+			// An adapter that throws instead of yielding an error event — a refused
+			// connection, a non-2xx response, a non-JSON SSE chunk (openaiCompatible.ts
+			// throws in all three cases) — ends the turn the same honest way: one
+			// `finished`, stop "error", and the server's own words, never ours.
+			const reason = error instanceof Error ? error.message : String(error);
+			// What streamed before the throw survives where it survives on the
+			// error-event path. A call cut in half is not kept: a tool_call without its
+			// result would poison the next request.
+			// shortcut: a call cut in half by the throw is dropped, never repeated;
+			// change when a partial call has to reach the transcript of the turn.
+			blocks.push(...assistantBlocks(stepText, stepThinking));
+			return finish("error", reason);
 		}
 
 		const { calls: rawCalls, truncated } = accumulator.finish(stop);
-		const stepBlocks: ResponseBlock[] = [];
-		if (stepText.length > 0) stepBlocks.push({ text: stepText.join(""), type: "text" } satisfies TextBlock);
-		if (stepThinking.length > 0) {
-			stepBlocks.push({ text: stepThinking.join(""), type: "thinking" } satisfies ThinkingBlock);
-		}
+		const stepBlocks = assistantBlocks(stepText, stepThinking);
 
 		// A call whose arguments never arrived is dead: the model has to hear that
 		// in the same words we would use for a broken argument (rule 3).
@@ -155,7 +179,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
 		// No calls means the model stopped talking to us and is done with the learner.
 		if (rawCalls.length === 0 && truncated.length === 0) {
 			blocks.push(...stepBlocks);
-			return finish(stop);
+			return finish(stop, failure);
 		}
 
 		blocks.push(...stepBlocks);
@@ -167,6 +191,16 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
 
 	// Out of steps, not out of ideas: the caller shows this as a truncated turn.
 	return finish("length");
+}
+
+/** What the model produced in one step, in arrival order: only what arrived. */
+function assistantBlocks(stepText: string[], stepThinking: string[]): ResponseBlock[] {
+	const blocks: ResponseBlock[] = [];
+	if (stepText.length > 0) blocks.push({ text: stepText.join(""), type: "text" } satisfies TextBlock);
+	if (stepThinking.length > 0) {
+		blocks.push({ text: stepThinking.join(""), type: "thinking" } satisfies ThinkingBlock);
+	}
+	return blocks;
 }
 
 /** Level 1 and 2 of the contract, plus the structural check. Returns the text the

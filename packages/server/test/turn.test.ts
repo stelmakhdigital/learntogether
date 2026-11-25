@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { ToolRegistry } from "@learntogether/agent";
 import { createFakeTransport } from "@learntogether/models";
-import type { Request, Transport } from "@learntogether/models";
+import type { Request, Transport, TransportEvent } from "@learntogether/models";
 import { createSession, entries, migrate, openDb } from "@learntogether/data";
 import { createApp } from "../src/app.ts";
 import { DEFAULT_PORT, type Config } from "../src/config.ts";
@@ -58,8 +58,9 @@ function runnerFor(db: ReturnType<typeof openDb>, transport: Transport): TurnRun
 async function withApp(t: { after(fn: () => unknown): void }, transport: Transport | null) {
 	const db = startedDb();
 	const sessionId = createSession(db, { kind: "teach" });
+	const runner = transport === null ? undefined : runnerFor(db, transport);
 	const app = createApp({
-		...(transport === null ? {} : { turn: runnerFor(db, transport) }),
+		...(runner === undefined ? {} : { turn: runner }),
 		config: config(),
 		db,
 		log: () => {},
@@ -70,7 +71,7 @@ async function withApp(t: { after(fn: () => unknown): void }, transport: Transpo
 	if (address === null || typeof address === "string") throw new Error("сервер не слушает порт");
 	const base = `http://127.0.0.1:${address.port}`;
 	const url = (path: string) => `${base}${path}`;
-	return { app, db, sessionId, url };
+	return { app, db, runner, sessionId, url };
 }
 
 test("without a transport the turn routes say so instead of running", async (t) => {
@@ -167,6 +168,46 @@ test("cancel stops the turn and the stream closes", async () => {
 	const again = runner.start(sessionId, "продолжим");
 	assert.notEqual(again.turnId, handle.turnId);
 	await again.done;
+});
+
+test("a transport that throws closes the live stream with one honest error finish", async (t) => {
+	// The adapter throws instead of reporting an error event: HTTP 500 from the
+	// model server. The learner has to get a closed stream with the reason, not a
+	// connection that hangs until something else gives up.
+	const transport: Transport = {
+		stream(): AsyncIterable<TransportEvent> {
+			return (async function* generate(): AsyncGenerator<TransportEvent> {
+				yield { type: "text_delta", text: "вектор — это" };
+				throw new Error("openai-compatible: POST failed with HTTP 500: upstream unavailable");
+			})();
+		},
+	};
+	const { db, runner, sessionId, url } = await withApp(t, transport);
+
+	const start = await fetch(url(`/sessions/${sessionId}/turn`), {
+		body: JSON.stringify({ text: "объясни" }),
+		headers: { "content-type": "application/json" },
+		method: "POST",
+	});
+	assert.equal(start.status, 202);
+
+	// Waiting for the turn itself, then subscribing: the stream replays a finished
+	// turn synchronously, so awaiting the body is waiting for the close.
+	const handle = runner!.get(sessionId)!;
+	await handle.done;
+	const response = await fetch(url(`/sessions/${sessionId}/turn/stream`));
+	assert.equal(response.headers.get("content-type"), "text/event-stream");
+	const body = await response.text();
+
+	const frames = body.split("\n").filter((line) => line.startsWith("data: "));
+	assert.equal(frames.filter((frame) => frame.includes('"type":"finished"')).length, 1);
+	assert.match(body, /"stop":"error"/);
+	assert.match(body, /HTTP 500/);
+
+	// Half a turn is not lost: what the learner already saw stays in the transcript.
+	const teacher = entries(db, sessionId).filter((entry) => entry.role === "teacher");
+	assert.equal(teacher.length, 1);
+	assert.match(teacher[0]!.text, /вектор — это/);
 });
 
 test("budget comes from a measured window, never from a guess", () => {
