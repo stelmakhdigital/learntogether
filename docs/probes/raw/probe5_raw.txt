@@ -1,0 +1,26 @@
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"role":"assistant","content":null}}],"created":1795617858,"id":"chatcmpl-ivJrgD2lVaLS9Y9Vl0oSuxwfbG8VhUzv","model":"/home/arka/models/Qwen2.5-7B-Instruct-Q4_K_M.gguf","system_fingerprint":"b12723-abca69200","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"tool_calls":[{"index":0,"id":"CerIiZCECH0VFwz0qx2BfBqzD2V89pDZ","type":"function","function":{"name":"record_step","arguments":"{"}}]}}],"created":1795617859,"id":"chatcmpl-ivJrgD2lVaLS9Y9Vl0oSuxwfbG8VhUzv","model":"/home/arka/models/Qwen2.5-7B-Instruct-Q4_K_M.gguf","system_fingerprint":"b12723-abca69200","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\""}}]}}],"created":1795617859,"id":"chatcmpl-ivJrgD2lVaLS9Y9Vl0oSuxwfbG8VhUzv","model":"/home/arka/models/Qwen2.5-7B-Instruct-Q4_K_M.gguf","system_fingerprint":"b12723-abca69200","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"statement"}}]}}],"created":1795617859,"id":"chatcmpl-ivJrgD2lVaLS9Y9Vl0oSuxwfbG8VhUzv","model":"/home/arka/models/Qwen2.5-7B-Instruct-Q4_K_M.gguf","system_fingerprint":"b12723-abca69200","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\":"}}]}}],"created":1795617859,"id":"chatcmpl-ivJrgD2lVaLS9Y9Vl0oSuxwfbG8VhUzv","model":"/home/arka/models/Qwen2.5-7B-Instruct-Q4_K_M.gguf","system_fingerprint":"b12723-abca69200","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":" \""}}]}}],"created":1795617859,"id":"chatcmpl-ivJrgD2lVaLS9Y9Vl0oSuxwfbG8VhUzv","model":"/home/arka/models/Qwen2.5-7B-Instruct-Q4_K_M.gguf","system_fingerprint":"b12723-abca69200","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"в"}}]}}],"created":1795617859,"id":"chatcmpl-ivJrgD2lVaLS9Y9Vl0oSuxwfbG8VhUzv","model":"/home/arka/models/Qwen2.5-7B-Instruct-Q4_K_M.gguf","system_fingerprint":"b12723-abca69200","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"ектор"}}]}}],"created":1795617859,"id":"chatcmpl-ivJrgD2lVaLS9Y9Vl0oSuxwfbG8VhUzv","model":"/home/arka/models/Qwen2.5-7B-Instruct-Q4_K_M.gguf","system_fingerprint":"b12723-abca69200","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":" —"}}]}}],"created":1795617859,"id":"chatcmpl-ivJrgD2lVaLS9Y9Vl0oSuxwfbG8VhUzv","model":"/home/arka/models/Qwen2.5-7B-Instruct-Q4_K_M.gguf","system_fingerprint":"b12723-abca69200","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":" это"}}]}}],"created":1795617859,"id":"chatcmpl-ivJrgD2lVaLS9Y9Vl0oSuxwfbG8VhUzv","model":"/home/arka/models/Qwen2.5-7B-Instruct-Q4_K_M.gguf","system_fingerprint":"b12723-abca69200","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":"length","index":0,"delta":{}}],"created":1795617859,"id":"chatcmpl-ivJrgD2lVaLS9Y9Vl0oSuxwfbG8VhUzv","model":"/home/arka/models/Qwen2.5-7B-Instruct-Q4_K_M.gguf","system_fingerprint":"b12723-abca69200","object":"chat.completion.chunk"}
+
+data: {"choices":[],"created":1795617859,"id":"chatcmpl-ivJrgD2lVaLS9Y9Vl0oSuxwfbG8VhUzv","model":"/home/arka/models/Qwen2.5-7B-Instruct-Q4_K_M.gguf","system_fingerprint":"b12723-abca69200","object":"chat.completion.chunk","usage":{"completion_tokens":20,"prompt_tokens":208,"total_tokens":228,"prompt_tokens_details":{"cached_tokens":207}},"timings":{"cache_n":207,"prompt_n":1,"prompt_ms":21.247,"prompt_per_token_ms":21.247,"prompt_per_second":47.065468066079916,"predicted_n":20,"predicted_ms":362.782,"predicted_per_token_ms":19.09378947368421,"predicted_per_second":52.373050482107715}}
+
+data: [DONE]
+

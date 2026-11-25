@@ -1,0 +1,60 @@
+:
+
+:
+
+:
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"role":"assistant","content":null}}],"created":1795617831,"id":"chatcmpl-TnrjlDiuj4Bg2RPY7D6IsYvQsKFPJGJJ","model":"/home/arka/models/Qwen2.5-7B-Instruct-Q4_K_M.gguf","system_fingerprint":"b12723-abca69200","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"tool_calls":[{"index":0,"id":"pEkCGi73MkUZxuJkU0mwskq4ya8bzf7H","type":"function","function":{"name":"record_step","arguments":"{"}}]}}],"created":1795617853,"id":"chatcmpl-TnrjlDiuj4Bg2RPY7D6IsYvQsKFPJGJJ","model":"/home/arka/models/Qwen2.5-7B-Instruct-Q4_K_M.gguf","system_fingerprint":"b12723-abca69200","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\""}}]}}],"created":1795617853,"id":"chatcmpl-TnrjlDiuj4Bg2RPY7D6IsYvQsKFPJGJJ","model":"/home/arka/models/Qwen2.5-7B-Instruct-Q4_K_M.gguf","system_fingerprint":"b12723-abca69200","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"statement"}}]}}],"created":1795617853,"id":"chatcmpl-TnrjlDiuj4Bg2RPY7D6IsYvQsKFPJGJJ","model":"/home/arka/models/Qwen2.5-7B-Instruct-Q4_K_M.gguf","system_fingerprint":"b12723-abca69200","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\":"}}]}}],"created":1795617853,"id":"chatcmpl-TnrjlDiuj4Bg2RPY7D6IsYvQsKFPJGJJ","model":"/home/arka/models/Qwen2.5-7B-Instruct-Q4_K_M.gguf","system_fingerprint":"b12723-abca69200","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":" \""}}]}}],"created":1795617853,"id":"chatcmpl-TnrjlDiuj4Bg2RPY7D6IsYvQsKFPJGJJ","model":"/home/arka/models/Qwen2.5-7B-Instruct-Q4_K_M.gguf","system_fingerprint":"b12723-abca69200","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"в"}}]}}],"created":1795617853,"id":"chatcmpl-TnrjlDiuj4Bg2RPY7D6IsYvQsKFPJGJJ","model":"/home/arka/models/Qwen2.5-7B-Instruct-Q4_K_M.gguf","system_fingerprint":"b12723-abca69200","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"ектор"}}]}}],"created":1795617853,"id":"chatcmpl-TnrjlDiuj4Bg2RPY7D6IsYvQsKFPJGJJ","model":"/home/arka/models/Qwen2.5-7B-Instruct-Q4_K_M.gguf","system_fingerprint":"b12723-abca69200","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":" —"}}]}}],"created":1795617853,"id":"chatcmpl-TnrjlDiuj4Bg2RPY7D6IsYvQsKFPJGJJ","model":"/home/arka/models/Qwen2.5-7B-Instruct-Q4_K_M.gguf","system_fingerprint":"b12723-abca69200","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":" это"}}]}}],"created":1795617853,"id":"chatcmpl-TnrjlDiuj4Bg2RPY7D6IsYvQsKFPJGJJ","model":"/home/arka/models/Qwen2.5-7B-Instruct-Q4_K_M.gguf","system_fingerprint":"b12723-abca69200","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":" стр"}}]}}],"created":1795617853,"id":"chatcmpl-TnrjlDiuj4Bg2RPY7D6IsYvQsKFPJGJJ","model":"/home/arka/models/Qwen2.5-7B-Instruct-Q4_K_M.gguf","system_fingerprint":"b12723-abca69200","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"ел"}}]}}],"created":1795617853,"id":"chatcmpl-TnrjlDiuj4Bg2RPY7D6IsYvQsKFPJGJJ","model":"/home/arka/models/Qwen2.5-7B-Instruct-Q4_K_M.gguf","system_fingerprint":"b12723-abca69200","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"ка"}}]}}],"created":1795617853,"id":"chatcmpl-TnrjlDiuj4Bg2RPY7D6IsYvQsKFPJGJJ","model":"/home/arka/models/Qwen2.5-7B-Instruct-Q4_K_M.gguf","system_fingerprint":"b12723-abca69200","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":" с"}}]}}],"created":1795617853,"id":"chatcmpl-TnrjlDiuj4Bg2RPY7D6IsYvQsKFPJGJJ","model":"/home/arka/models/Qwen2.5-7B-Instruct-Q4_K_M.gguf","system_fingerprint":"b12723-abca69200","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":" д"}}]}}],"created":1795617853,"id":"chatcmpl-TnrjlDiuj4Bg2RPY7D6IsYvQsKFPJGJJ","model":"/home/arka/models/Qwen2.5-7B-Instruct-Q4_K_M.gguf","system_fingerprint":"b12723-abca69200","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"ли"}}]}}],"created":1795617853,"id":"chatcmpl-TnrjlDiuj4Bg2RPY7D6IsYvQsKFPJGJJ","model":"/home/arka/models/Qwen2.5-7B-Instruct-Q4_K_M.gguf","system_fingerprint":"b12723-abca69200","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"ной"}}]}}],"created":1795617853,"id":"chatcmpl-TnrjlDiuj4Bg2RPY7D6IsYvQsKFPJGJJ","model":"/home/arka/models/Qwen2.5-7B-Instruct-Q4_K_M.gguf","system_fingerprint":"b12723-abca69200","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\","}}]}}],"created":1795617853,"id":"chatcmpl-TnrjlDiuj4Bg2RPY7D6IsYvQsKFPJGJJ","model":"/home/arka/models/Qwen2.5-7B-Instruct-Q4_K_M.gguf","system_fingerprint":"b12723-abca69200","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":" \""}}]}}],"created":1795617853,"id":"chatcmpl-TnrjlDiuj4Bg2RPY7D6IsYvQsKFPJGJJ","model":"/home/arka/models/Qwen2.5-7B-Instruct-Q4_K_M.gguf","system_fingerprint":"b12723-abca69200","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"kind"}}]}}],"created":1795617853,"id":"chatcmpl-TnrjlDiuj4Bg2RPY7D6IsYvQsKFPJGJJ","model":"/home/arka/models/Qwen2.5-7B-Instruct-Q4_K_M.gguf","system_fingerprint":"b12723-abca69200","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\":"}}]}}],"created":1795617853,"id":"chatcmpl-TnrjlDiuj4Bg2RPY7D6IsYvQsKFPJGJJ","model":"/home/arka/models/Qwen2.5-7B-Instruct-Q4_K_M.gguf","system_fingerprint":"b12723-abca69200","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":" \""}}]}}],"created":1795617853,"id":"chatcmpl-TnrjlDiuj4Bg2RPY7D6IsYvQsKFPJGJJ","model":"/home/arka/models/Qwen2.5-7B-Instruct-Q4_K_M.gguf","system_fingerprint":"b12723-abca69200","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"foundation"}}]}}],"created":1795617853,"id":"chatcmpl-TnrjlDiuj4Bg2RPY7D6IsYvQsKFPJGJJ","model":"/home/arka/models/Qwen2.5-7B-Instruct-Q4_K_M.gguf","system_fingerprint":"b12723-abca69200","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"}"}}]}}],"created":1795617853,"id":"chatcmpl-TnrjlDiuj4Bg2RPY7D6IsYvQsKFPJGJJ","model":"/home/arka/models/Qwen2.5-7B-Instruct-Q4_K_M.gguf","system_fingerprint":"b12723-abca69200","object":"chat.completion.chunk"}
+
+data: {"choices":[{"finish_reason":"tool_calls","index":0,"delta":{}}],"created":1795617853,"id":"chatcmpl-TnrjlDiuj4Bg2RPY7D6IsYvQsKFPJGJJ","model":"/home/arka/models/Qwen2.5-7B-Instruct-Q4_K_M.gguf","system_fingerprint":"b12723-abca69200","object":"chat.completion.chunk"}
+
+data: {"choices":[],"created":1795617853,"id":"chatcmpl-TnrjlDiuj4Bg2RPY7D6IsYvQsKFPJGJJ","model":"/home/arka/models/Qwen2.5-7B-Instruct-Q4_K_M.gguf","system_fingerprint":"b12723-abca69200","object":"chat.completion.chunk","usage":{"completion_tokens":36,"prompt_tokens":208,"total_tokens":244,"prompt_tokens_details":{"cached_tokens":0}},"timings":{"cache_n":0,"prompt_n":208,"prompt_ms":114333.941,"prompt_per_token_ms":549.6824086538462,"prompt_per_second":1.819232313526217,"predicted_n":36,"predicted_ms":21814.99,"predicted_per_token_ms":623.2854285714286,"predicted_per_second":1.6044013772181422}}
+
+data: [DONE]
+
