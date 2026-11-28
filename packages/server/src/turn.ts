@@ -18,6 +18,14 @@ export interface TurnHandle {
 	done: Promise<TurnSummary>;
 }
 
+/** What a window needs when it opens in the middle of someone's lesson. */
+export interface TurnStatus {
+	running: boolean;
+	turnId: string | null;
+	/** How the last finished turn ended; null while it has not ended. */
+	stop: string | null;
+}
+
 export interface TurnSummary {
 	turnId: string;
 	stop: string;
@@ -64,6 +72,16 @@ export class TurnRunner {
 		return this.active.get(sessionId) ?? this.recent.get(sessionId);
 	}
 
+	/** Turns run inside this process, so after a restart the honest answer is «no
+	 *  turn» rather than a guess from the transcript: a turn that died with the
+	 *  process is not resumable, and the learner should be able to start a new one. */
+	status(sessionId: string): TurnStatus {
+		const active = this.active.get(sessionId);
+		if (active !== undefined) return { running: true, stop: null, turnId: active.turnId };
+		const recent = this.recent.get(sessionId);
+		return { running: false, stop: recent?.stop ?? null, turnId: recent?.turnId ?? null };
+	}
+
 	/** Starts a turn. A second request for the same session is refused: two
 	 *  writers would interleave into one transcript. */
 	start(sessionId: string): TurnHandle {
@@ -89,6 +107,7 @@ class ActiveTurn implements TurnHandle {
 	private readonly replayed: AgentEvent[] = [];
 	private replayedDone = false;
 	private readonly controller = new AbortController();
+	private summary: TurnSummary | null = null;
 	readonly turnId: string;
 	readonly done: Promise<TurnSummary>;
 
@@ -104,7 +123,15 @@ class ActiveTurn implements TurnHandle {
 		this.db = db;
 		this.sessionId = sessionId;
 		this.turnId = randomUUID();
-		this.done = this.run(deps, finished);
+		this.done = this.run(deps, finished).then((summary) => {
+			this.summary = summary;
+			return summary;
+		});
+	}
+
+	/** Null until the turn has ended: a running turn has no outcome yet. */
+	get stop(): string | null {
+		return this.summary?.stop ?? null;
 	}
 
 	/** Late subscribers get everything that already happened, then live events.

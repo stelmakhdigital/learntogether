@@ -1,4 +1,5 @@
 // The wording a data screen puts next to a row. Tested here rather than through
+import { groupView, viewItem } from "../src/view.ts";
 // the DOM because these are the sentences the learner acts on: wrong words in them
 // send a person to the wrong material.
 
@@ -28,4 +29,46 @@ test("hidden count counts what the page does not show, never below zero", () => 
 	// A page longer than the total (the server returned more than it counted) is not
 	// allowed to produce a negative remainder.
 	assert.equal(hiddenCount({ query: "", hits: 0, shown: 60, total: 40 }), 0);
+});
+
+// The view projection decides what a transcript entry becomes on screen. It is a
+// contract, not a rendering detail: internal traffic must not read as the teacher's
+// speech, and the learner must not be shown the arguments a tool was called with.
+test("речь остаётся речью, служебное — служебным", () => {
+	assert.deepEqual(viewItem({ kind: "text", ordinal: 1, role: "learner", text: "объясни" }), {
+		actor: "Вы",
+		kind: "speech",
+		ordinal: 1,
+		text: "объясни",
+	});
+	assert.deepEqual(viewItem({ kind: "tool_call", ordinal: 2, role: "system", text: 'probe_record {"items":[{"state":"held"}]}' }), {
+		actor: "Урок",
+		detail: null,
+		kind: "service",
+		ordinal: 2,
+		text: "вызов: probe_record",
+	});
+	assert.deepEqual(viewItem({ kind: "tool_result", ordinal: 3, role: "system", text: "probe_record: замер записан: 1 held" }), {
+		actor: "Урок",
+		detail: "замер записан: 1 held",
+		kind: "service",
+		ordinal: 3,
+		text: "ответ: probe_record",
+	});
+});
+
+test("подряд идущие служебные записи сворачиваются в один блок", () => {
+	const grouped = groupView(
+		[
+			{ actor: "Вы", kind: "speech", ordinal: 1, text: "а" },
+			{ actor: "Урок", detail: null, kind: "service", ordinal: 2, text: "вызов: x" },
+			{ actor: "Урок", detail: "ок", kind: "service", ordinal: 3, text: "ответ: x" },
+			{ actor: "Учитель", kind: "speech", ordinal: 4, text: "б" },
+			{ actor: "Урок", detail: null, kind: "service", ordinal: 5, text: "вызов: y" },
+		],
+	);
+	assert.deepEqual(
+		grouped.map((block) => (block.kind === "services" ? `services:${block.items.length}` : block.kind)),
+		["speech", "services:2", "speech", "services:1"],
+	);
 });

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { api, probeServer } from "./api.ts";
+import { groupView, viewItem } from "./view.ts";
+import type { Entry, ViewItem } from "./view.ts";
 import { StateView } from "./states.ts";
 import type { ScreenState } from "./states.ts";
 
@@ -11,13 +13,6 @@ import type { ScreenState } from "./states.ts";
 // refetches entries (D-044). An answer goes to its own route, never through the
 // message box: the verdict of a check belongs to the check (D-056).
 
-interface Entry {
-	ordinal: number;
-	role: "learner" | "teacher" | "system";
-	kind: string;
-	text: string;
-}
-
 interface OpenCheck {
 	id: string;
 	kind: string;
@@ -27,6 +22,10 @@ interface OpenCheck {
 }
 
 type Verdict = { reason: string; verdict: string };
+
+/** Answer of GET /sessions/:id/turn: is the teacher writing right now, and how did
+ *  the previous turn end. */
+type TurnStatus = { running: boolean; stop: string | null; turnId: string | null };
 
 type LiveEvent =
 	| { type: "text"; text: string }
@@ -43,21 +42,39 @@ const VERDICT_LABEL: Record<string, string> = {
 	partial: "Не полностью",
 };
 
-const ROLE_LABEL: Record<Entry["role"], string> = {
-	learner: "Вы",
-	teacher: "Учитель",
-	system: "Система",
-};
-
-function TranscriptEntry({ entry }: { entry: Entry }): ReactNode {
-	const long = entry.text.length > LONG_TEXT;
+/** Speech of the lesson: what the learner wrote and what the teacher said. */
+function Speech({ item }: { item: ViewItem & { kind: "speech" } }): ReactNode {
+	const long = item.text.length > LONG_TEXT;
 	const body = long
-		? <details className="chat__long"><summary>{entry.text.slice(0, LONG_TEXT)}…</summary><p>{entry.text.slice(LONG_TEXT)}</p></details>
-		: <p>{entry.text}</p>;
+		? <details className="chat__long"><summary>{item.text.slice(0, LONG_TEXT)}…</summary><p>{item.text.slice(LONG_TEXT)}</p></details>
+		: <p>{item.text}</p>;
 	return (
-		<li className={`chat__entry chat__entry--${entry.role}`}>
-			<span className="chat__role">{ROLE_LABEL[entry.role]}</span>
+		<li className={`chat__entry chat__entry--${item.actor === "Вы" ? "learner" : "teacher"}`}>
+			<span className="chat__role">{item.actor}</span>
 			{body}
+		</li>
+	);
+}
+
+/** Tool traffic, folded by default. It is the honest record of what the lesson did
+ *  — but six lines of «ответ: probe_record» between the teacher's speech push the
+ *  lesson itself off the screen. */
+function ServiceGroup({ items }: { items: ViewItem[] }): ReactNode {
+	return (
+		<li className="chat__services">
+			<details>
+				<summary>служебные записи хода: {items.length}</summary>
+				<ul>
+					{items.map((item) =>
+						item.kind === "service" ? (
+							<li className="chat__service" key={item.ordinal}>
+								<span className="chat__service-name">{item.text}</span>
+								{item.detail !== null && <span className="chat__service-detail">{item.detail}</span>}
+							</li>
+						) : null,
+					)}
+				</ul>
+			</details>
 		</li>
 	);
 }
@@ -177,15 +194,6 @@ export function Chat({
 		return () => streamRef.current?.close();
 	}, []);
 
-	// A session started on another screen arrives as a prop: adopt it, refill it.
-	useEffect(() => {
-		if (session === null) return;
-		setSessionId(session);
-		void api<{ entries: Entry[] }>(`/sessions/${session}/entries`)
-			.then((transcript) => setEntries(transcript.entries))
-			.catch((error: unknown) => setFailure(error instanceof Error ? error.message : String(error)));
-	}, [session]);
-
 	const retry = useCallback(() => {
 		setFailure(null);
 		void probeServer().then((reason) => setFailure(reason));
@@ -224,6 +232,38 @@ export function Chat({
 		},
 		[refresh],
 	);
+
+	const cancel = useCallback(async () => {
+		const id = sessionId;
+		if (id === null) return;
+		try {
+			await api<{ canceled: string }>(`/sessions/${id}/turn/cancel`, { method: "POST" });
+		} catch (error) {
+			setFailure(error instanceof Error ? error.message : String(error));
+		}
+	}, [sessionId]);
+
+	/** Opens a session: its transcript, and whether the teacher is mid-turn right
+	 *  now. A reload in the middle of a lesson must not look like a stalled one —
+	 *  the turn stream replays what already happened, so the learner sees the turn
+	 *  continue rather than restart, and can always cancel it. */
+	const resume = useCallback(
+		async (id: string) => {
+			const transcript = await api<{ entries: Entry[] }>(`/sessions/${id}/entries`);
+			setEntries(transcript.entries);
+			const turn = await api<TurnStatus>(`/sessions/${id}/turn`);
+			if (turn.running) watchTurn(id);
+			else await refresh(id);
+		},
+		[refresh, watchTurn],
+	);
+
+	// A session started on another screen arrives as a prop: adopt it, refill it.
+	useEffect(() => {
+		if (session === null) return;
+		setSessionId(session);
+		void resume(session).catch((error: unknown) => setFailure(error instanceof Error ? error.message : String(error)));
+	}, [resume, session]);
 
 	const ensureSession = useCallback(async (): Promise<string> => {
 		if (sessionId !== null) return sessionId;
@@ -306,9 +346,11 @@ export function Chat({
 			)}
 			{entries.length > 0 && (
 				<ol className="chat__list">
-					{entries.map((entry) => (
-						<TranscriptEntry key={entry.ordinal} entry={entry} />
-					))}
+					{groupView(entries.map(viewItem)).flatMap((item, at): ReactNode => {
+						if (item.kind === "services") return <ServiceGroup items={item.items} key={`s${at}`} />;
+						if (item.kind === "speech") return <Speech item={item} key={item.ordinal} />;
+						return null;
+					})}
 				</ol>
 			)}
 			{check !== null && state !== "ERROR" && (
@@ -323,6 +365,11 @@ export function Chat({
 					placeholder="Например: объясни, что такое производная"
 					onChange={(event) => setDraft(event.target.value)}
 				/>
+				{running && (
+					<button className="chat__cancel" type="button" onClick={() => void cancel()}>
+						Отменить ход
+					</button>
+				)}
 				<button className="chat__send" type="submit" disabled={running || draft.trim() === ""}>
 					{running ? "Идёт ход…" : "Отправить"}
 				</button>

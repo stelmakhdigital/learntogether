@@ -269,6 +269,17 @@ export function createApp(deps: AppDeps): FastifyInstance {
 		}
 	});
 
+	// Whether a turn is running. The window asks this when it opens: without it a
+	// reload in the middle of a lesson looks like a stalled one, and the learner
+	// cannot tell «the teacher is still writing» from «the server died».
+	app.get<{ Params: { id: string } }>("/sessions/:id/turn", (request, reply) => {
+		const runner = deps.turn;
+		if (runner === undefined) return reply.code(503).send({ error: "транспорт модели не настроен" });
+		const { id } = request.params;
+		if (!getSession(db, id)) return reply.code(404).send({ error: `сессии ${id} нет` });
+		return runner.status(id);
+	});
+
 	app.post<{ Params: { id: string } }>("/sessions/:id/turn/cancel", (request, reply) => {
 		const runner = deps.turn;
 		if (runner === undefined) return reply.code(503).send({ error: "транспорт модели не настроен" });

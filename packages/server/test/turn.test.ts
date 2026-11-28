@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { ToolRegistry } from "@learntogether/agent";
 import { createFakeTransport } from "@learntogether/models";
 import type { Request, Transport, TransportEvent } from "@learntogether/models";
-import { entries, migrate, openDb } from "@learntogether/data";
+import { appendEntry, entries, migrate, openDb } from "@learntogether/data";
 import { createApp } from "../src/app.ts";
 import { unmetCheck } from "../src/context.ts";
 import { createStepTools } from "../src/teach/steps.ts";
@@ -357,4 +357,56 @@ test("budget comes from a measured window, never from a guess", () => {
 	assert.deepEqual(budgetFor(db, "local", "qwen", 1536, 4096), { input: 256512, output: 4096 });
 
 	assert.throws(() => budgetFor(db, "local", "нет-такой", 2000), /не пробирована/);
+});
+
+// Opening a window in the middle of a lesson must not look like a stalled lesson.
+test("состояние хода: тихо до первого сообщения, конец хода виден после", async (t) => {
+	const transport = createFakeTransport({ turns: [{ text: "вектор — это стрелка" }] });
+	const { sessionId, url } = await withApp(t, transport);
+
+	const idle = await fetch(url(`/sessions/${sessionId}/turn`));
+	assert.equal(idle.status, 200);
+	assert.deepEqual(await idle.json(), { running: false, stop: null, turnId: null });
+
+	await fetch(url(`/sessions/${sessionId}/turn`), {
+		body: JSON.stringify({ text: "что такое вектор" }),
+		headers: { "content-type": "application/json" },
+		method: "POST",
+	});
+	const live = await (await fetch(url(`/sessions/${sessionId}/turn/stream`))).text();
+	assert.match(live, /"type":"finished"/);
+
+	const after = await fetch(url(`/sessions/${sessionId}/turn`));
+	const status = await after.json();
+	assert.equal(status.running, false);
+	assert.equal(status.stop, "end");
+	assert.equal(typeof status.turnId, "string");
+});
+
+test("состояние хода: неизвестная сессия — 404, без транспорта — 503", async (t) => {
+	const { sessionId, url } = await withApp(t, null);
+	assert.equal((await fetch(url(`/sessions/${sessionId}/turn`))).status, 503);
+	const { url: url2, sessionId: live } = await withApp(
+		t,
+		createFakeTransport({ turns: [{ text: "а" }] }),
+	);
+	void live;
+	assert.equal((await fetch(url2(`/sessions/00000000-0000-0000-0000-000000000000/turn`))).status, 404);
+});
+
+test("ход живёт в процессе сервера: после перезапуска состояния хода нет", async () => {
+	const db = startedDb();
+	const sessionId = teachSession(db);
+	appendEntry(db, { kind: "text", role: "learner", sessionId, text: "что такое вектор" });
+	const runner = runnerFor(db, createFakeTransport({ turns: [{ text: "а" }] }));
+	await runner.start(sessionId).done;
+	assert.equal(runner.status(sessionId).running, false);
+	assert.equal(runner.status(sessionId).stop, "end");
+
+	// A fresh runner over the same database is what a restarted server is. It must
+	// say «no turn» instead of inventing one from the transcript.
+	const restarted = runnerFor(db, createFakeTransport({ turns: [{ text: "б" }] }));
+	assert.deepEqual(restarted.status(sessionId), { running: false, stop: null, turnId: null });
+	await restarted.start(sessionId).done;
+	db.close();
 });
