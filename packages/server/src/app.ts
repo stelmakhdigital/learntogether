@@ -8,6 +8,7 @@ import { appendEntry, createSession, entries, exportAll, getSession, searchEntri
 // openDb is referenced only to name the handle type, hence a type import.
 import type { openDb, SessionKind } from "@learntogether/data";
 import { type Config } from "./config.ts";
+import type { AnswerService } from "./teach/answer.ts";
 import type { TurnRunner } from "./turn.ts";
 
 /** The handle as data opens it, so this package does not need better-sqlite3 types. */
@@ -21,6 +22,8 @@ export interface AppDeps {
 	/** Absent until a model transport is configured: turn routes then answer 503
 	 *  instead of pretending a lesson can run. */
 	turn?: TurnRunner;
+	/** Absent for the same reason: a verdict of a free-form check needs the model. */
+	answer?: AnswerService;
 }
 
 const POLL_MS = 200;
@@ -207,9 +210,9 @@ export function createApp(deps: AppDeps): FastifyInstance {
 
 		try {
 			appendEntry(db, { kind: "text", role: "learner", sessionId: id, text });
-			// Prompt and budget are the composition root's business; the route only
-			// carries the learner's words.
-			const handle = runner.start(id, text);
+			// Context, prompt and budget are the composition root's business and are
+			// read from the database; the route only carries the learner's words here.
+			const handle = runner.start(id);
 			handle.done.catch((error: unknown) => {
 				log(`ход ${handle.turnId}: ${error instanceof Error ? error.message : String(error)}`);
 			});
@@ -263,6 +266,68 @@ export function createApp(deps: AppDeps): FastifyInstance {
 		);
 		return undefined;
 	});
+
+	// The check the learner is expected to answer, and the answer itself. The
+	// verdict of a choice is computed by us; a free-form one is compared with the
+	// stored reference through the model (decision D-056).
+	app.get<{ Params: { id: string } }>("/sessions/:id/check", (request, reply) => {
+		const service = deps.answer;
+		if (service === undefined) return reply.code(503).send({ error: "транспорт модели не настроен" });
+		if (!getSession(db, request.params.id)) return reply.code(404).send({ error: `сессии ${request.params.id} нет` });
+		const check = service.pending(request.params.id);
+		if (check === null) return { check: null };
+		return {
+			check: {
+				askConfidence: check.askConfidence,
+				id: check.id,
+				kind: check.kind,
+				options: check.options,
+				question: check.question,
+			},
+		};
+	});
+
+	app.post<{ Params: { id: string }; Body: { answer?: unknown; confidence?: unknown; hints?: unknown } }>(
+		"/sessions/:id/check/answer",
+		async (request, reply) => {
+			const service = deps.answer;
+			if (service === undefined) return reply.code(503).send({ error: "транспорт модели не настроен" });
+			if (!getSession(db, request.params.id)) return reply.code(404).send({ error: `сессии ${request.params.id} нет` });
+			const body = request.body as { answer?: unknown; confidence?: unknown; hints?: unknown } | null;
+			const answer = body?.answer;
+			if (typeof answer !== "string" && typeof answer !== "number") {
+				return reply.code(400).send({ error: "нужно поле answer: номер варианта или слова ученика" });
+			}
+			if (typeof answer === "string" && answer.trim() === "") {
+				return reply.code(400).send({ error: "пустой ответ: напиши формулировку или нажми вариант" });
+			}
+			try {
+				const outcome = await service.answer(request.params.id, {
+					answer,
+					...(typeof body?.confidence === "number" ? { confidence: body.confidence } : {}),
+					...(typeof body?.hints === "number" ? { hints: body.hints } : {}),
+				});
+				// The teacher must react to an answer: repair the step or move on. Starting
+				// the turn here keeps the reaction on the server, so a client that closed
+				// the tab during the answer still finds an answered lesson.
+				const runner = deps.turn;
+				if (runner === undefined) return { ...outcome, turnId: null };
+				try {
+					const handle = runner.start(request.params.id);
+					handle.done.catch((error: unknown) => {
+						log(`ход после ответа ${handle.turnId}: ${error instanceof Error ? error.message : String(error)}`);
+					});
+					return { ...outcome, turnId: handle.turnId };
+				} catch (error) {
+					// The answer is stored; only the reaction did not start. Saying so is
+					// better than pretending the whole call failed.
+					return { ...outcome, turnId: null, warning: error instanceof Error ? error.message : String(error) };
+				}
+			} catch (error) {
+				return reply.code(409).send({ error: error instanceof Error ? error.message : String(error) });
+			}
+		},
+	);
 
 	app.post("/export", () => {
 		const written = exportAll(db, config.exportDir, new Date().toISOString());

@@ -38,7 +38,18 @@ function requireOwnStep(db: Database.Database, sessionId: string, stepId: string
 	const row = db
 		.prepare("SELECT id, session_id, ordinal, statement, kind, state FROM step WHERE id = ?")
 		.get(stepId) as StepRow | undefined;
-	if (row === undefined) throw new Error(`шага ${stepId} нет`);
+	if (row === undefined) {
+		// A real model reaches for the ordinal it sees in the lesson ("step 1") instead
+		// of the id. Naming the step it probably meant is the difference between a
+		// corrected call and a wasted round.
+		const byOrdinal = db
+			.prepare("SELECT ordinal, id FROM step WHERE session_id = ? AND ordinal = ?")
+			.get(sessionId, Number(stepId)) as { ordinal: number; id: string } | undefined;
+		if (byOrdinal !== undefined && Number.isInteger(Number(stepId))) {
+			throw new Error(`шага со step_id "${stepId}" нет: это номер шага, а нужен его id — шаг ${byOrdinal.ordinal} имеет id ${byOrdinal.id}`);
+		}
+		throw new Error(`шага ${stepId} нет`);
+	}
 	if (row.session_id !== sessionId) throw new Error(`шаг ${stepId} не из этой сессии`);
 	return row;
 }
@@ -122,7 +133,7 @@ export function createStepTools(db: Database.Database, sessionId: string): ToolP
 				premises,
 				...(motivation === undefined ? {} : { motivation }),
 			});
-			return `шаг ${created.id} под номером ${created.ordinal}`;
+			return `шаг ${created.id} под номером ${created.ordinal}; следующий вызов — present_step со step_id ${created.id}`;
 		},
 	};
 
@@ -184,7 +195,10 @@ export function createStepTools(db: Database.Database, sessionId: string): ToolP
 				text: step.statement,
 			});
 			presentStep(db, stepId);
-			return `показан шаг ${step.ordinal}`;
+			// The result names the next required call: a small local model that finished
+			// the step and stopped talking left the step without a check (live check
+			// 2026-11-28), and the method does not allow a step without one.
+			return `показан шаг ${step.ordinal}; следующий вызов — check_understanding со step_id ${step.id}`;
 		},
 	};
 

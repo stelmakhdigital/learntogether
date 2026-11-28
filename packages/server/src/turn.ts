@@ -29,9 +29,12 @@ export interface TurnDeps {
 	transport: Transport;
 	/** Tools are per-session: they carry the session id in their closure. */
 	registry(db: Database.Database, sessionId: string): ToolRegistry;
-	/** The composition root owns the prompt and the budget: what the model may be
-	 *  given follows from a measured context window, not from a constant (D-006). */
-	buildRequest(sessionId: string, learnerText: string): Request;
+	/** The composition root owns the prompt, the context and the budget: what the
+	 *  model may be given follows from a measured context window, not from a
+	 *  constant (D-006). The learner's words are already in the transcript — the
+	 *  route appended them before the turn started — so the context is read from
+	 *  the database and does not depend on what a client chose to resend. */
+	buildRequest(sessionId: string): Promise<Request>;
 }
 
 interface Subscriber {
@@ -59,11 +62,11 @@ export class TurnRunner {
 
 	/** Starts a turn. A second request for the same session is refused: two
 	 *  writers would interleave into one transcript. */
-	start(sessionId: string, learnerText: string): TurnHandle {
+	start(sessionId: string): TurnHandle {
 		if (this.active.has(sessionId)) {
 			throw new Error(`ход сессии ${sessionId} уже идёт; сначала отмени его`);
 		}
-		const turn = new ActiveTurn(this.db, sessionId, learnerText, this.deps, () => {
+		const turn = new ActiveTurn(this.db, sessionId, this.deps, () => {
 			this.active.delete(sessionId);
 			this.recent.set(sessionId, turn);
 		});
@@ -86,14 +89,13 @@ class ActiveTurn implements TurnHandle {
 	constructor(
 		db: Database.Database,
 		sessionId: string,
-		learnerText: string,
 		deps: TurnDeps,
 		finished: () => void,
 	) {
 		this.db = db;
 		this.sessionId = sessionId;
 		this.turnId = randomUUID();
-		this.done = this.run(learnerText, deps, finished);
+		this.done = this.run(deps, finished);
 	}
 
 	/** Late subscribers get everything that already happened, then live events.
@@ -151,9 +153,19 @@ class ActiveTurn implements TurnHandle {
 		}
 	}
 
-	private async run(learnerText: string, deps: TurnDeps, finished: () => void): Promise<TurnSummary> {
+	private async run(deps: TurnDeps, finished: () => void): Promise<TurnSummary> {
 		try {
-			const request = deps.buildRequest(this.sessionId, learnerText);
+			let request: Request;
+			try {
+				request = await deps.buildRequest(this.sessionId);
+			} catch (error) {
+				// The context itself could not be assembled (no budget, no room). The
+				// learner must see why in the same honest shape as any other failure,
+				// not a stream that simply stops (D-054).
+				const reason = error instanceof Error ? error.message : String(error);
+				this.emit({ error: reason, stop: "error", type: "finished" });
+				return { calls: [], stop: "error", text: "", turnId: this.turnId };
+			}
 			const registry = deps.registry(this.db, this.sessionId);
 			const result = await runTurn({
 				onEvent: (event) => this.emit(event),

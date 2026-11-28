@@ -35,7 +35,7 @@ interface WireToolCall {
 	function: { name: string; arguments: string };
 }
 
-interface WireMessage {
+export interface WireMessage {
 	role: "system" | "user" | "assistant" | "tool";
 	content: string;
 	tool_calls?: WireToolCall[];
@@ -94,15 +94,14 @@ function rejectUnsupportedReasoning(request: Request): void {
 	}
 }
 
-function wireTools(tools: ToolDefinition[]): { type: "function"; function: ToolDefinition }[] {
+export function wireTools(tools: ToolDefinition[]): { type: "function"; function: ToolDefinition }[] {
 	// The canonical schema was enforced upstream (schema.ts); we only wrap it.
 	return tools.map((tool) => ({ function: tool, type: "function" }));
 }
 
-/** Blocks become wire messages: one assistant message per turn, one `tool`
- *  message per result. Thinking blocks are not sent back (rule 5: for this
- *  family we strip reasoning blocks whenever history is replayed). */
-function wireMessages(request: Request): WireMessage[] {
+/** Exported for the token counter: rendering the same way the transport renders
+ *  is the only way its count means anything (D-051). */
+export function wireMessages(request: Request): WireMessage[] {
 	const messages: WireMessage[] = [];
 	if (request.system !== "") messages.push({ content: request.system, role: "system" });
 	for (const message of request.messages) {

@@ -10,7 +10,7 @@
 	},
 	"packageManager": "pnpm@10.34.9",
 	"scripts": {
-		"test": "node --test packages/*/test/*.test.ts apps/*/test/*.test.ts",
+		"test": "node --test packages/*/test/*.test.ts packages/*/test/*/*.test.ts apps/*/test/*.test.ts",
 		"typecheck": "tsc --noEmit",
 		"lint": "eslint .",
 		"check:layers": "node scripts/check-layers.mjs",

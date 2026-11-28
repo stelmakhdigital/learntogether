@@ -24,7 +24,7 @@ function settings(): ModelSettings {
 	return { apiKey: null, baseUrl: "http://127.0.0.1:8123", model: MODEL };
 }
 
-function fixture(options: { toolCalls?: boolean; nCtx?: number | null } = {}): FetchFn {
+function fixture(options: { toolCalls?: boolean; nCtx?: number | null; noTemplate?: boolean } = {}): FetchFn {
 	const toolCalls = options.toolCalls ?? true;
 	const json = (body: unknown): Response =>
 		new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
@@ -51,7 +51,10 @@ function fixture(options: { toolCalls?: boolean; nCtx?: number | null } = {}): F
 				usage: { completion_tokens: 6, prompt_tokens: 200, total_tokens: 206 },
 			});
 		}
-		if (path === "/apply-template") return json({ prompt: "p" });
+		if (path === "/apply-template") {
+			if (options.noTemplate === true) return new Response("not found", { status: 404 });
+			return json({ prompt: "p" });
+		}
 		if (path === "/tokenize") return json({ tokens: new Array(200).fill(1) });
 		return json({});
 	};
@@ -59,8 +62,9 @@ function fixture(options: { toolCalls?: boolean; nCtx?: number | null } = {}): F
 
 test("composition stores the probe and builds a runner with a measured budget", async () => {
 	const db = startedDb();
-	const runner = await composeTurnRunner({ db, fetch: fixture(), log: () => {}, model: settings() });
-	assert.ok(runner);
+	const composed = await composeTurnRunner({ db, fetch: fixture(), log: () => {}, model: settings() });
+	assert.ok(composed.turn);
+	assert.equal(typeof composed.answer.pending, "function");
 
 	const row = getModelInfo(db, DEFAULT_ENDPOINT_ID, MODEL);
 	assert.ok(row);
@@ -88,5 +92,13 @@ test("an unmeasured context window fails at startup, not mid-lesson (D-006)", as
 	await assert.rejects(
 		composeTurnRunner({ db, fetch: fixture({ nCtx: null }), log: () => {}, model: settings() }),
 		/не измерен|не пробирована/,
+	);
+});
+
+test("a server that cannot count tokens gets no lesson: its context would be a guess", async () => {
+	const db = startedDb();
+	await assert.rejects(
+		composeTurnRunner({ db, fetch: fixture({ noTemplate: true }), log: () => {}, model: settings() }),
+		/не отдаёт точный счёт токенов/,
 	);
 });

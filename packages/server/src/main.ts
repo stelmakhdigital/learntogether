@@ -6,9 +6,8 @@ import { existsSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { migrate, openDb } from "@learntogether/data";
 import { createApp } from "./app.ts";
-import { composeTurnRunner } from "./compose.ts";
+import { composeTurnRunner, type Composition } from "./compose.ts";
 import { checkBind, loadConfig, pathsFor, type Config } from "./config.ts";
-import type { TurnRunner } from "./turn.ts";
 
 // Migrations ship next to the data package. The path is resolved from this
 // module, never from the working directory, so any launcher may start us.
@@ -59,14 +58,14 @@ export async function start(env: NodeJS.ProcessEnv = process.env): Promise<numbe
 		return 1;
 	}
 
-	// The turn runner exists only over a probed endpoint (D-006): the probe
-	// measures the window and the tool calling, and a failed probe stops the
-	// startup with its own words. Without a configured model the server still
-	// serves data routes; /sessions/:id/turn answers 503.
-	let turn: TurnRunner | undefined;
+	// The turn runner and the answer service exist only over a probed endpoint
+	// (D-006): the probe measures the window and the tool calling, and a failed
+	// probe stops the startup with its own words. Without a configured model the
+	// server still serves data routes; the lesson routes answer 503.
+	let composed: Composition | undefined;
 	if (config.model !== null) {
 		try {
-			turn = await composeTurnRunner({ db, log, model: config.model });
+			composed = await composeTurnRunner({ db, log, model: config.model });
 		} catch (error) {
 			fail(textOf(error));
 			db.close();
@@ -76,7 +75,12 @@ export async function start(env: NodeJS.ProcessEnv = process.env): Promise<numbe
 		log("модель не настроена: хода урока не будет (model.url/id в settings.json или LTH_MODEL_URL/LTH_MODEL_ID)");
 	}
 
-	const app = createApp({ db, config, log, ...(turn === undefined ? {} : { turn }) });
+	const app = createApp({
+		db,
+		config,
+		log,
+		...(composed === undefined ? {} : { answer: composed.answer, turn: composed.turn }),
+	});
 
 	const stopSignal = (signal: string) => {
 		log(`остановка по ${signal}`);

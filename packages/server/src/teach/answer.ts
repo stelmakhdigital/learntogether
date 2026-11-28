@@ -1,9 +1,12 @@
-// Accepting the learner's answer to a check: the verdict comes from the teacher
-// model, the rating is picked inside what the domain allows (decision D-037),
-// and both go to the repository, which moves the step and the probe state.
+// Accepting the learner's answer to a check. The learner's words arrive from the
+// learner, never from the teacher model (decision D-056): a choice answer is
+// compared with the stored reference here, a free-form answer is compared with
+// that same reference through the model, and the verdict lands in storage exactly
+// once. The rating is picked inside what the domain allows (decision D-037), and
+// the repository moves the step and the probe state.
 
 import type Database from "better-sqlite3";
-import { resolveCheck, type StepAnswer } from "@learntogether/data";
+import { appendEntry, openChecksForSession, resolveCheck, type CheckRow, type StepAnswer } from "@learntogether/data";
 import {
 	allowedRatings,
 	type CheckVerdict,
@@ -12,6 +15,8 @@ import {
 	type Rating,
 	type StepState,
 } from "@learntogether/domain";
+import { judgeAnswer, learnerAnswerText, mechanicalVerdict } from "./judge.ts";
+import type { Budget, Transport } from "@learntogether/models";
 
 export type AnswerCheckInput = {
 	checkId: string;
@@ -63,4 +68,74 @@ export function answerCheck(
 		...(input.wrongReasoning === undefined ? {} : { wrongReasoning: input.wrongReasoning }),
 	});
 	return { probeState, rating, stepState };
+}
+
+export type LearnerAnswerInput = {
+	/** Option index for a choice, the recalled words for anything else. */
+	answer: string | number;
+	/** Required when the check asked for it: calibration is anchored before the
+	 *  result is shown, so it cannot be filled in afterwards. */
+	confidence?: number;
+	hints?: number;
+};
+
+export type AnswerOutcome = {
+	checkId: string;
+	verdict: CheckVerdict;
+	reason: string;
+	stepState: StepState;
+	probeState: ProbeState;
+	rating: Rating;
+};
+
+export interface AnswerService {
+	/** The check the learner is expected to answer right now, or null. */
+	pending(sessionId: string): CheckRow | null;
+	answer(sessionId: string, input: LearnerAnswerInput): Promise<AnswerOutcome>;
+}
+
+/** The HTTP side of answering: verdict, storage, and the answer as a message of
+ *  the lesson (the next turn reads the conversation, and the readable export must
+ *  show what was actually said). */
+export function createAnswerService(deps: {
+	db: Database.Database;
+	transport: Transport;
+	budget: () => Budget;
+}): AnswerService {
+	const { db, transport } = deps;
+	return {
+		pending: (sessionId) => openChecksForSession(db, sessionId)[0] ?? null,
+		async answer(sessionId, input): Promise<AnswerOutcome> {
+			const check = openChecksForSession(db, sessionId)[0];
+			if (check === undefined) throw new Error("открытых проверок нет — отвечать не на что");
+
+			const text = learnerAnswerText(input.answer, check.options);
+			if (check.askConfidence && input.confidence === undefined) {
+				throw new Error("проверка просила уверенность: без поля confidence ответ не принимается");
+			}
+			const hints = input.hints ?? 0;
+			const computed = mechanicalVerdict(check, input.answer);
+			const judged =
+				computed === null
+					? await judgeAnswer(transport, deps.budget(), check, text)
+					: { reason: "", verdict: computed };
+
+			const graded = answerCheck(db, sessionId, {
+				checkId: check.id,
+				learnerAnswer: typeof input.answer === "number" ? input.answer : text,
+				verdict: judged.verdict,
+				confidence: input.confidence ?? 3,
+				hints,
+			});
+			appendEntry(db, { kind: "text", role: "learner", sessionId, text });
+			return {
+				checkId: check.id,
+				probeState: graded.probeState,
+				rating: graded.rating,
+				reason: judged.reason,
+				stepState: graded.stepState,
+				verdict: judged.verdict,
+			};
+		},
+	};
 }

@@ -5,3 +5,4 @@ export * from "./schema.ts";
 export * from "./fakeTransport.ts";
 export * from "./openaiCompatible.ts";
 export * from "./probe.ts";
+export * from "./countTokens.ts";

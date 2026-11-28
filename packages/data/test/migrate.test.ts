@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,9 +14,12 @@ function tableNames(db: ReturnType<typeof openDb>): Set<string> {
 	return new Set(rows.map((row) => row.name));
 }
 
-test("first run applies 001_init.sql, second run applies nothing", () => {
+test("first run applies every migration, second run applies nothing", () => {
 	const db = openDb(":memory:");
-	assert.deepEqual(migrate(db, migrationsDir), ["001_init.sql"]);
+	const expected = readdirSync(migrationsDir)
+		.filter((file) => file.endsWith(".sql"))
+		.sort();
+	assert.deepEqual(migrate(db, migrationsDir), expected);
 	assert.deepEqual(migrate(db, migrationsDir), []);
 	db.close();
 });

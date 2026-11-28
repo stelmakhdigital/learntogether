@@ -146,3 +146,17 @@ test("step ordinals run 1,2,3 per session and stay stable across reads", () => {
 	assert.equal(third.ordinal, 3);
 	db.close();
 });
+
+test("the same wording twice in one lesson is refused with the id to reuse", () => {
+	const db = openedDb();
+	const { sessionId, stepId } = sessionWithStep(db, { kind: "foundation", premises: [] });
+
+	assert.throws(
+		() => createStep(db, { sessionId, statement: "если нагреть, частицы движутся быстрее", kind: "foundation", premises: [] }),
+		new RegExp(`уже записан под номером 1 \\(id ${stepId}\\)`),
+	);
+	// A different wording is a different step: the rule is about the text, not about
+	// the count of steps.
+	assert.equal(createStep(db, { sessionId, statement: "другая формулировка", kind: "foundation", premises: [] }).ordinal, 2);
+	db.close();
+});

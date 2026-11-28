@@ -41,7 +41,7 @@ function recordStep(
 		premises: input.premises ?? (input.kind === "derivation" ? ["node-1"] : []),
 		motivation: "на какой вопрос ученика отвечает",
 	});
-	const parsed = /^шаг (\S+) под номером (\d+)$/.exec(answer);
+	const parsed = /^шаг (\S+) под номером (\d+);/.exec(answer);
 	assert.ok(parsed, `unexpected record_step answer: ${answer}`);
 	return { id: parsed[1]!, ordinal: Number(parsed[2]) };
 }
@@ -55,7 +55,7 @@ function checkIdOf(answer: string): string {
 /** A presented step with one open free_recall check — the state answerCheck needs. */
 function presentedWithCheck(db: Db, sessionId: string, statement: string): { stepId: string; checkId: string } {
 	const { id: stepId, ordinal } = recordStep(db, sessionId, { statement, kind: "foundation" });
-	assert.equal(call(db, sessionId, "present_step", { step_id: stepId, text: "объяснение" }), `показан шаг ${ordinal}`);
+	assert.match(call(db, sessionId, "present_step", { step_id: stepId, text: "объяснение" }), new RegExp(`показан шаг ${ordinal}; следующий вызов — check_understanding со step_id`));
 	const checkId = checkIdOf(
 		call(db, sessionId, "check_understanding", {
 			step_id: stepId,
@@ -98,7 +98,7 @@ test("present_step moves planned to presented once and writes the wording into t
 	const sessionId = createSession(db, { kind: "teach" });
 	const { id: stepId } = recordStep(db, sessionId, { statement: "давление пара растёт с температурой", kind: "foundation" });
 
-	assert.equal(call(db, sessionId, "present_step", { step_id: stepId, text: "смотри: молекулы бьют в крышку" }), "показан шаг 1");
+	assert.match(call(db, sessionId, "present_step", { step_id: stepId, text: "смотри: молекулы бьют в крышку" }), /^показан шаг 1; следующий вызов — check_understanding/);
 	assert.equal(stepsForSession(db, sessionId)[0]!.state, "presented");
 
 	assert.throws(

@@ -128,6 +128,16 @@ export function createStep(
 	if (!kindRequiresPremises(input.kind) && premises.length > 0) {
 		throw new Error(`step kind "${input.kind}" must have empty premises: a foundation is not derived from anything`);
 	}
+	// The same wording twice in one lesson is the model losing its own state, not
+	// a second step. The refusal names the id so the next call can use it.
+	const duplicate = db
+		.prepare("SELECT id, ordinal FROM step WHERE session_id = ? AND statement = ? COLLATE NOCASE")
+		.get(input.sessionId, input.statement.trim()) as { id: string; ordinal: number } | undefined;
+	if (duplicate !== undefined) {
+		throw new Error(
+			`шаг с такой формулировкой уже записан под номером ${duplicate.ordinal} (id ${duplicate.id}) — работай с ним, а не записывай второй`,
+		);
+	}
 	const id = randomUUID();
 	// Same append rule as transcript_entry: MAX+1 and INSERT share one
 	// transaction so concurrent steps cannot collide on UNIQUE (session_id, ordinal).
@@ -335,6 +345,19 @@ export function stepsForSession(db: Database.Database, sessionId: string): StepR
 		)
 		.all(sessionId) as Record<string, unknown>[];
 	return rows.map(rowToStep);
+}
+
+/** The checks of this session that are still waiting for an answer. */
+export function openChecksForSession(db: Database.Database, sessionId: string): CheckRow[] {
+	const rows = db
+		.prepare(
+			`SELECT c.* FROM step_check c
+			 JOIN step s ON s.id = c.step_id
+			 WHERE s.session_id = ? AND c.answered_at IS NULL
+			 ORDER BY c.rowid ASC`,
+		)
+		.all(sessionId) as Record<string, unknown>[];
+	return rows.map(rowToCheck);
 }
 
 function rowToCheck(row: Record<string, unknown>): CheckRow {

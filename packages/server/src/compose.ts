@@ -6,8 +6,15 @@
 import type Database from "better-sqlite3";
 import { ToolRegistry } from "@learntogether/agent";
 import { saveEndpoint, saveModelInfo } from "@learntogether/data";
-import { createOpenAICompatibleTransport, probeEndpoint, type FetchFn } from "@learntogether/models";
+import {
+	createOpenAICompatibleTransport,
+	createRenderTokenCounter,
+	probeEndpoint,
+	type FetchFn,
+} from "@learntogether/models";
 import type { ModelSettings } from "./config.ts";
+import { fitRequest } from "./context.ts";
+import { createAnswerService, type AnswerService } from "./teach/answer.ts";
 import { TEACHER_PROMPT } from "./teach/prompt.ts";
 import { createStepTools } from "./teach/steps.ts";
 import { budgetFor, TurnRunner } from "./turn.ts";
@@ -30,10 +37,17 @@ export interface ComposeDeps {
 	fetch?: FetchFn;
 }
 
+/** What a live endpoint yields: the runner of lesson turns and the service that
+ *  accepts the learner's answers. Both need the same measured transport. */
+export interface Composition {
+	turn: TurnRunner;
+	answer: AnswerService;
+}
+
 /** Probes, stores, refuses. An endpoint that cannot call tools cannot teach:
  *  every tool call is the method itself, so this is a startup failure with the
  *  probe's own words, not a degraded mode. */
-export async function composeTurnRunner(deps: ComposeDeps): Promise<TurnRunner> {
+export async function composeTurnRunner(deps: ComposeDeps): Promise<Composition> {
 	const { db, model, log } = deps;
 	const probe = await probeEndpoint({
 		baseUrl: model.baseUrl,
@@ -69,6 +83,21 @@ export async function composeTurnRunner(deps: ComposeDeps): Promise<TurnRunner> 
 	// budget exists (D-006), and the user learns it at startup, not mid-lesson.
 	budgetFor(db, DEFAULT_ENDPOINT_ID, probe.modelId, INPUT_RESERVE_TOKENS);
 
+	// The context of a turn is measured, not estimated, so a server that gave no
+	// exact token count cannot carry a lesson: its prompt size would be a guess.
+	if (probe.tokenizerSource !== "server") {
+		throw new Error(
+			`сервер ${model.baseUrl} не отдаёт точный счёт токенов (проба: ${probe.probeMethod}); ` +
+				"для llama.cpp нужны /apply-template и /tokenize — без них размер хода не измерить (D-006, D-051)",
+		);
+	}
+	const counter = createRenderTokenCounter({
+		baseUrl: model.baseUrl,
+		model: probe.modelId,
+		...(model.apiKey === null ? {} : { apiKey: model.apiKey }),
+		...(deps.fetch === undefined ? {} : { fetch: deps.fetch }),
+	});
+
 	const transport = createOpenAICompatibleTransport({
 		baseUrl: `${model.baseUrl}/v1`,
 		model: probe.modelId,
@@ -80,16 +109,30 @@ export async function composeTurnRunner(deps: ComposeDeps): Promise<TurnRunner> 
 	const runner = new TurnRunner(db, {
 		transport,
 		registry: (database, sessionId) => new ToolRegistry(createStepTools(database, sessionId)),
-		buildRequest: (sessionId, learnerText) => {
+		buildRequest: async (sessionId) => {
 			const registry = new ToolRegistry(createStepTools(db, sessionId));
-			return {
-				budget: budgetFor(db, DEFAULT_ENDPOINT_ID, probe.modelId, INPUT_RESERVE_TOKENS),
-				messages: [{ content: [{ text: learnerText, type: "text" }], role: "user" }],
-				reasoningLevel: "none",
+			return fitRequest({
+				counter,
+				db,
+				log,
+				sessionId,
 				system: TEACHER_PROMPT,
-				tools: registry.definitions(),
-			};
+				transport,
+				request: {
+					budget: budgetFor(db, DEFAULT_ENDPOINT_ID, probe.modelId, INPUT_RESERVE_TOKENS),
+					messages: [],
+					reasoningLevel: "none",
+					system: "",
+					tools: registry.definitions(),
+				},
+			});
 		},
 	});
-	return runner;
+
+	const answer = createAnswerService({
+		db,
+		budget: () => budgetFor(db, DEFAULT_ENDPOINT_ID, probe.modelId, INPUT_RESERVE_TOKENS),
+		transport,
+	});
+	return { answer, turn: runner };
 }

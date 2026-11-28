@@ -196,3 +196,69 @@ button:focus-visible {
 	opacity: 0.55;
 	cursor: not-allowed;
 }
+
+/* The check awaiting an answer lives outside the message box: its verdict belongs
+   to the check, not to the conversation (D-056). */
+.chat__check {
+	margin: 0.75rem 0 0;
+	padding: 0.75rem;
+	border: 1px solid var(--line);
+	border-left: 3px solid var(--accent);
+	border-radius: 0.375rem;
+	display: grid;
+	gap: 0.625rem;
+}
+
+.chat__check-question {
+	margin: 0;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+.chat__options,
+.chat__confidence {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem 1rem;
+	align-items: center;
+}
+
+.chat__confidence-label {
+	font-size: 0.8125rem;
+	color: var(--muted);
+}
+
+.chat__option {
+	display: inline-flex;
+	gap: 0.375rem;
+	align-items: center;
+	cursor: pointer;
+}
+
+.chat__option input {
+	accent-color: var(--accent);
+}
+
+.chat__words {
+	font: inherit;
+	padding: 0.5rem 0.625rem;
+	border: 1px solid var(--line);
+	border-radius: 0.375rem;
+	background: canvas;
+	color: inherit;
+	resize: vertical;
+}
+
+.chat__verdict {
+	margin: 0.5rem 0 0;
+	font-size: 0.875rem;
+}
+
+.chat__verdict--correct {
+	color: var(--ok, #2e7d5b);
+}
+
+.chat__verdict--incorrect,
+.chat__verdict--partial {
+	color: var(--warn, #a3541f);
+}

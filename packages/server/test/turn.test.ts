@@ -43,9 +43,25 @@ function startedDb() {
 
 function runnerFor(db: ReturnType<typeof openDb>, transport: Transport): TurnRunner {
 	return new TurnRunner(db, {
-		buildRequest: (sessionId, learnerText): Request => ({
+		// The context comes from the database: by the time a turn starts, the
+		// learner's message is already a transcript entry (the real composition root
+		// does the same reading through context.ts).
+		buildRequest: async (sessionId): Promise<Request> => ({
 			budget: { input: 4000, output: 500 },
-			messages: [{ content: [{ text: learnerText, type: "text" }], role: "user" }],
+			messages: [
+				{
+					content: [
+						{
+							text:
+								entries(db, sessionId, { limit: 200 })
+									.filter((entry) => entry.kind === "text" && entry.role === "learner")
+									.at(-1)!.text,
+							type: "text",
+						},
+					],
+					role: "user",
+				},
+			],
 			reasoningLevel: "none",
 			system: `учитель сессии ${sessionId}`,
 			tools: [],
@@ -159,14 +175,14 @@ test("cancel stops the turn and the stream closes", async () => {
 	const db = startedDb();
 	const sessionId = createSession(db, { kind: "teach" });
 	const runner = runnerFor(db, transport);
-	const handle = runner.start(sessionId, "начнём");
+	const handle = runner.start(sessionId);
 	handle.cancel();
 	const summary = await handle.done;
 	assert.equal(summary.stop, "error");
 	// The finished turn stays readable for replay, but the session is free again:
 	// a cancelled turn must not block the learner from asking again.
 	assert.equal(runner.get(sessionId)?.turnId, handle.turnId);
-	const again = runner.start(sessionId, "продолжим");
+	const again = runner.start(sessionId);
 	assert.notEqual(again.turnId, handle.turnId);
 	await again.done;
 });
