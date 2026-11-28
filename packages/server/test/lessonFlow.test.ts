@@ -29,6 +29,7 @@ const config: Config = {
 	language: "ru",
 	port: DEFAULT_PORT,
 	source: null,
+	uiDir: null,
 	model: null,
 };
 

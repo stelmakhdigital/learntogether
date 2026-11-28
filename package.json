@@ -16,7 +16,8 @@
 		"check:layers": "node scripts/check-layers.mjs",
 		"verify": "pnpm lint && pnpm check:layers && pnpm typecheck && pnpm test",
 		"build": "pnpm -r --if-present build",
-		"screens": "node scripts/screens.mjs"
+		"screens": "node scripts/screens.mjs",
+		"desktop:smoke": "node scripts/desktop-smoke.mjs"
 	},
 	"devDependencies": {
 		"@types/node": "24.19.2",

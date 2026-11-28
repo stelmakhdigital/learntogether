@@ -20,6 +20,7 @@ const config: Config = {
 	model: null,
 	port: 0,
 	source: null,
+	uiDir: null,
 };
 
 type Db = ReturnType<typeof openDb>;

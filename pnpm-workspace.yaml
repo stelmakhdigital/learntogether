@@ -1,3 +1,8 @@
 packages:
   - "packages/*"
   - "apps/*"
+# Electron downloads its binary in a postinstall script; pnpm 10 runs only the
+# scripts listed here. better-sqlite3 ships prebuilt binaries and needs no build
+# script here (electron-rebuild for it is explicitly not run, see AGENTS.md).
+onlyBuiltDependencies:
+  - electron

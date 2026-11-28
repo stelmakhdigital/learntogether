@@ -31,6 +31,7 @@ const config: Config = {
 	model: null,
 	port: 0,
 	source: null,
+	uiDir: null,
 };
 
 async function serve(): Promise<{ base: string; close: () => Promise<void>; db: ReturnType<typeof openDb> }> {

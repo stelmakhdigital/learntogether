@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -31,6 +31,7 @@ function makeConfig(overrides: Partial<Config> = {}): Config {
 		language: "ru",
 		accessToken: null,
 		source: null,
+		uiDir: null,
 		model: null,
 		exportDir: path.join(tmpdir(), "learntogether-unused"),
 		...overrides,
@@ -265,4 +266,39 @@ test("a failing handler answers 500 with the text and keeps the stack in the log
 
 test("the process saw no unhandled rejection", () => {
 	assert.deepEqual(rejections, []);
+});
+
+// The built interface is served by this same process: the desktop window and the
+// PWA both load the app from here, so there is one origin and no CORS. The shell
+// is public, everything behind it is not — and an unknown path is not allowed to
+// reveal whether a route exists there.
+test("собранный интерфейс раздаётся тем же процессом, данные остаются за токеном", async (t) => {
+	const uiDir = await mkdtemp(path.join(tmpdir(), "lth-ui-"));
+	await mkdir(path.join(uiDir, "assets"), { recursive: true });
+	await writeFile(path.join(uiDir, "index.html"), "<!doctype html><title>learntogether</title>");
+	await writeFile(path.join(uiDir, "assets", "index.js"), "console.log(1)");
+	await writeFile(path.join(uiDir, "secret.txt"), "не для сети");
+
+	const { base, app } = await serve(makeConfig({ uiDir, accessToken: "sekret-token" }));
+	t.after(async () => {
+		await closeAll(app);
+		await rm(uiDir, { recursive: true, force: true });
+	});
+
+	const page = await fetch(`${base}/`);
+	assert.equal(page.status, 200);
+	assert.match(page.headers.get("content-type") ?? "", /text\/html/);
+	assert.match(await page.text(), /learntogether/);
+	const asset = await fetch(`${base}/assets/index.js`);
+	assert.equal(asset.status, 200);
+	//outside the assets directory the token is required for anything at all
+	assert.equal((await fetch(`${base}/secret.txt`)).status, 401);
+	assert.equal((await fetch(`${base}/export`)).status, 401);
+	assert.equal((await fetch(`${base}/sessions`, { method: "POST" })).status, 401);
+});
+
+test("без uiDir сервер остаётся только API", async (t) => {
+	const { base, app } = await serve(makeConfig());
+	t.after(() => closeAll(app));
+	assert.equal((await fetch(`${base}/`)).status, 404);
 });

@@ -2,7 +2,10 @@
 // of transcript entries. Persistence stays in @learntogether/data; this layer
 // only translates between the wire and the repositories.
 
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { timingSafeEqual } from "node:crypto";
+import fastifyStatic from "@fastify/static";
 import Fastify, { type FastifyError, type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import {
 	appendEntry,
@@ -63,6 +66,15 @@ function isHealth(request: { method?: string; url: string }): boolean {
 	return request.method === "GET" && (request.url === "/healthz" || request.url.startsWith("/healthz?"));
 }
 
+/** The built interface sits outside the token (D-077): it is the public shell of a
+ *  local app and carries no key material — the page only holds the address of the
+ *  API. Data routes stay behind the token; the static plugin sanitises its own
+ *  paths, so the exemption cannot be walked out of the assets directory. */
+function isUiShell(request: { method?: string; url: string }): boolean {
+	if (request.method !== "GET" && request.method !== "HEAD") return false;
+	return request.url === "/" || request.url.startsWith("/assets/");
+}
+
 type IntParse = { ok: true; value: number | null } | { ok: false; error: string };
 
 function parseUnsigned(raw: unknown, name: string, max: number): IntParse {
@@ -84,9 +96,29 @@ export function createApp(deps: AppDeps): FastifyInstance {
 	const { db, config, log } = deps;
 	const app = Fastify({ logger: false });
 
+	// The desktop window and the PWA load the app from this server, so the UI and
+	// the API share one origin and no CORS is needed. index.html is read per
+	// request: a rebuild then shows up without a restart.
+	if (config.uiDir !== null) {
+		const indexHtml = path.join(config.uiDir, "index.html");
+		app.get("/", async (request, reply) => {
+			reply.type("text/html; charset=utf-8").header("cache-control", "no-store");
+			return readFileSync(indexHtml);
+		});
+		// Registration is synchronous here: Fastify loads the plugin at listen(),
+		// and a broken assets directory then surfaces through app.listen's error.
+		app.register(fastifyStatic, {
+			decorateReply: false,
+			index: false,
+			maxAge: "1h",
+			prefix: "/assets/",
+			root: path.join(config.uiDir, "assets"),
+		});
+	}
+
 	// Access gate. The token value never reaches the reply or the log.
 	app.addHook("onRequest", async (request, reply) => {
-		if (config.accessToken === null || isHealth(request)) return;
+		if (config.accessToken === null || isHealth(request) || isUiShell(request)) return;
 		const given = bearerOf(request.headers.authorization);
 		if (given !== null && tokenMatches(given, config.accessToken)) return;
 		await reply

@@ -101,3 +101,25 @@ test("the api key comes from the environment only, never the file", () => {
 	const fileKey = config('{"model":{"apiKey":"sk-file","id":"m","url":"http://x"}}');
 	assert.equal(fileKey.model?.apiKey, null);
 });
+
+// The interface directory is named or it is not: a half-named one must not leave
+// the app window showing a blank page.
+test("uiDir: по умолчанию интерфейс не раздаётся", () => {
+	assert.equal(config(null, { LTH_DATA_DIR: "/tmp/lth" }).uiDir, null);
+});
+
+test("uiDir: указанный каталог без index.html — отказ с путём сборки", () => {
+	assert.throws(
+		() => loadConfig({ LTH_DATA_DIR: "/tmp/lth", LTH_UI_DIR: "/tmp/lth-no-ui" }, () => "", () => false),
+		/index\.html[\s\S]*pnpm build/,
+	);
+});
+
+test("uiDir: собранный интерфейс принимается по абсолютному пути", () => {
+	const c = loadConfig(
+		{ LTH_DATA_DIR: "/tmp/lth", LTH_UI_DIR: "/tmp/lth-ui" },
+		() => "",
+		(file) => file === path.join(path.resolve("/tmp/lth-ui"), "index.html"),
+	);
+	assert.equal(c.uiDir, path.resolve("/tmp/lth-ui"));
+});

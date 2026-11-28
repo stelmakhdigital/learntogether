@@ -7,12 +7,13 @@
 		".": "./src/index.ts"
 	},
 	"dependencies": {
+		"@fastify/static": "^8.3.0",
 		"@learntogether/agent": "workspace:*",
 		"@learntogether/data": "workspace:*",
 		"@learntogether/domain": "workspace:*",
 		"@learntogether/models": "workspace:*",
-		"fastify": "5.12.8",
-		"better-sqlite3": "13.2.0"
+		"better-sqlite3": "13.2.0",
+		"fastify": "5.12.8"
 	},
 	"devDependencies": {
 		"@types/better-sqlite3": "7.6.13"

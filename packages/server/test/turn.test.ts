@@ -24,6 +24,7 @@ function config(overrides: Partial<Config> = {}): Config {
 		language: "ru",
 		port: DEFAULT_PORT,
 		source: null,
+		uiDir: null,
 		model: null,
 		...overrides,
 	};

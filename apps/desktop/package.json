@@ -1,0 +1,14 @@
+{
+	"name": "@learntogether/desktop",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"main": "main.mjs",
+	"scripts": {
+		"start": "electron .",
+		"selftest": "node selftest.mjs"
+	},
+	"devDependencies": {
+		"electron": "45.5.0"
+	}
+}

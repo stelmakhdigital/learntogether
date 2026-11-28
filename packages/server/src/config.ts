@@ -27,6 +27,10 @@ export interface Config {
 	/** Teacher endpoint, or null when no model is configured: turn routes then
 	 *  answer 503 instead of pretending a lesson can run. */
 	model: ModelSettings | null;
+	/** Built interface to serve, or null: the desktop shell and the PWA both load
+	 *  the app from this server, so there is one origin and no CORS. Absent means
+	 *  API-only, which is how the Vite dev server talks to us. */
+	uiDir: string | null;
 }
 
 /** One model endpoint. The api key is env-only (D-012): key material never
@@ -125,7 +129,23 @@ export function loadConfig(
 		source,
 		exportDir: paths.exportDir,
 		model: readModel(env, stored, file),
+		uiDir: readUiDir(env, exists),
 	};
+}
+
+/** The built UI to serve. Refused rather than skipped when the directory is
+ *  named but has no index.html: an app window that shows a blank page tells the
+ *  user nothing, a refusal names the path to build. */
+function readUiDir(env: NodeJS.ProcessEnv, exists: (file: string) => boolean): string | null {
+	const raw = env.LTH_UI_DIR;
+	if (raw === undefined || raw === "") return null;
+	const dir = path.resolve(raw);
+	if (!exists(path.join(dir, "index.html"))) {
+		throw new Error(
+			`LTH_UI_DIR указывает на ${dir}, а там нет index.html. Собери интерфейс: pnpm build (результат — apps/ui/dist).`,
+		);
+	}
+	return dir;
 }
 
 /** Model endpoint: settings file first, environment on top. A half-configured
