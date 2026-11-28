@@ -4,7 +4,18 @@
 
 import { timingSafeEqual } from "node:crypto";
 import Fastify, { type FastifyError, type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
-import { appendEntry, createSession, entries, exportAll, getSession, searchEntries, SESSION_KINDS } from "@learntogether/data";
+import {
+	appendEntry,
+	createSession,
+	entries,
+	exportAll,
+	getSession,
+	practiceQueue,
+	reviewRepeatItem,
+	searchEntries,
+	SESSION_KINDS,
+} from "@learntogether/data";
+import { RATINGS } from "@learntogether/domain";
 // openDb is referenced only to name the handle type, hence a type import.
 import type { openDb, SessionKind } from "@learntogether/data";
 import { type Config } from "./config.ts";
@@ -325,6 +336,53 @@ export function createApp(deps: AppDeps): FastifyInstance {
 				}
 			} catch (error) {
 				return reply.code(409).send({ error: error instanceof Error ? error.message : String(error) });
+			}
+		},
+	);
+
+	// ─── практика ─────────────────────────────────────────────────────────────
+	// Очередь строится по графу и плану повторений (D-009): сначала узлы с открытым
+	// сомнением, потом созревшие, потом новые. Оценка уходит планировщику (D-035).
+	app.get<{ Querystring: { at?: string; limit?: string } }>("/queue", (request, reply) => {
+		const at = request.query.at;
+		if (at !== undefined && Number.isNaN(Date.parse(at))) {
+			return reply.code(400).send({ error: `at — дата в формате ISO, получено ${at}` });
+		}
+		const limit = parseUnsigned(request.query.limit, "limit", 100);
+		if (!limit.ok) return reply.code(400).send({ error: limit.error });
+		if (limit.value === 0) return reply.code(400).send({ error: "limit должен быть от 1 до 100" });
+		try {
+			return {
+				at: at ?? new Date().toISOString(),
+				items: practiceQueue(db, {
+					...(at === undefined ? {} : { at }),
+					...(limit.value === null || limit.value < 1 ? {} : { limit: limit.value }),
+				}),
+			};
+		} catch (error) {
+			return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) });
+		}
+	});
+
+	app.post<{ Params: { id: string }; Body: { method?: unknown; rating?: unknown } }>(
+		"/repeats/:id/review",
+		(request, reply) => {
+			const rating = (request.body ?? {}).rating;
+			if (typeof rating !== "string" || !RATINGS.includes(rating as (typeof RATINGS)[number])) {
+				return reply.code(400).send({ error: `rating — один из ${RATINGS.join(", ")}` });
+			}
+			try {
+				const outcome = reviewRepeatItem(db, request.params.id, { rating: rating as (typeof RATINGS)[number] });
+				return {
+					intervalDays: outcome.intervalDays,
+					minutes: outcome.minutes,
+					state: outcome.card.state,
+					dueAt: outcome.card.dueAt,
+				};
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				const status = /нет$|нет в графе/.test(message) ? 404 : 400;
+				return reply.code(status).send({ error: message });
 			}
 		},
 	);

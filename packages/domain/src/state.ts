@@ -63,7 +63,8 @@ export type CheckKind = "single_choice" | "multi_choice" | "free_recall" | "pred
 export type CheckVerdict = "correct" | "incorrect" | "partial";
 
 /** Repetition rating handed to the scheduler. */
-export type Rating = "again" | "hard" | "good" | "easy";
+export const RATINGS = ["again", "hard", "good", "easy"] as const;
+export type Rating = (typeof RATINGS)[number];
 
 /** A learner who guessed and felt confident must not get a long interval:
  *  upper ratings require a correct and complete answer (decision D-037). */

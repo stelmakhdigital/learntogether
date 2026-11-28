@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { createRepeatItem, } from "./repeats.ts";
 import { addChain, addProvenance, findClaimByText, upsertClaim } from "./graph.ts";
 import type Database from "better-sqlite3";
 import {
@@ -268,6 +269,9 @@ function installClaim(db: Database.Database, step: Record<string, unknown>): voi
 		if (resolved.length > 0) addChain(db, { conclusionId: id, premiseIds: resolved });
 	}
 	addProvenance(db, { claimId: id, sessionId: step.session_id as string, stepId: step.id as string });
+	// Принятое уходит в практику: элемент припоминания на этот узел. Остальные формы
+	// создаёт учитель, когда спрашивает их, — перенос проверяется отдельно.
+	createRepeatItem(db, { claimId: id, method: "recall" });
 }
 
 export function resolveCheck(

@@ -35,13 +35,15 @@ function filledFile(): string {
 	});
 	resolveCheck(db, checkId, { confidence: 4, learnerAnswer: "набор чисел", verdict: "correct" });
 	appendEntry(db, { kind: "text", role: "teacher", sessionId, text: "вектор — это стрелка с длиной" });
-	// The accepted step already put its wording into the graph; the repeat item is
-	// attached to that node, the way the app would attach one later.
+	// The accepted step installed its wording in the graph and put a recall item on
+	// it; the fixture only decorates what the lesson made.
 	const claimId = db.prepare("SELECT id FROM claim WHERE norm = ?").get("вектор — набор чисел") as { id: string };
 	db.prepare("UPDATE claim SET area = 'математика', tags_json = '[]' WHERE id = ?").run(claimId.id);
-	db.prepare(
-		"INSERT INTO repeat_item (id, claim_id, method, due_at, reps, lapses, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-	).run("r1", claimId.id, "recall", "2026-01-10T00:00:00.000Z", 1, 0, "2026-01-02T00:00:00.000Z");
+	db.prepare("UPDATE repeat_item SET id = 'r1', due_at = ?, reps = 1, created_at = ? WHERE claim_id = ?").run(
+		"2026-01-10T00:00:00.000Z",
+		"2026-01-02T00:00:00.000Z",
+		claimId.id,
+	);
 	closeSession(db, sessionId);
 	db.close();
 	return file;
