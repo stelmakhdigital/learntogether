@@ -145,6 +145,12 @@ export function createStep(
 		const next = db
 			.prepare("SELECT COALESCE(MAX(ordinal), 0) + 1 AS next FROM step WHERE session_id = ?")
 			.get(input.sessionId) as { next: number };
+		// The first recorded step is the lesson starting: the session stops being a
+		// measurement or an intention and becomes a teaching run.
+		db.prepare("UPDATE session SET state = 'teaching', updated_at = ? WHERE id = ? AND state IN ('probing','planning')").run(
+			nowIso(),
+			input.sessionId,
+		);
 		db.prepare(
 			`INSERT INTO step (id, session_id, plan_node_id, ordinal, statement, kind, premises_json, motivation, state, created_at)
 			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'planned', ?)`,
@@ -206,6 +212,17 @@ export function recordCheck(
 	const state = stepStateOf(step);
 	if (state !== "presented") {
 		throw new Error(`a check belongs to a presented step; step ${input.stepId} is "${state}"`);
+	}
+	// One check waits for the learner at a time. A second one while the first is
+	// unanswered is the model answering its own question (seen live 2026-11-28: it
+	// opened a check, then praised an answer the learner never gave).
+	const waiting = db
+		.prepare("SELECT id FROM step_check WHERE step_id = ? AND answered_at IS NULL")
+		.get(input.stepId) as { id: string } | undefined;
+	if (waiting !== undefined) {
+		throw new Error(
+			`шаг ${step.ordinal} уже ждёт ответа на проверку ${waiting.id} — вторая откроется, когда ученик ответит на первую`,
+		);
 	}
 
 	const id = randomUUID();

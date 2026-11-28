@@ -41,8 +41,9 @@ export const RAW_TOOL_SCHEMAS: readonly RawTool[] = [
 							statement: { type: "string", minLength: 1 },
 							state: {
 								type: "string",
-								enum: ["held", "frontier", "absent"],
-								description: "Держу / на границе / не держу.",
+								enum: ["held", "frontier", "absent", "contradicted"],
+								description:
+									"Держу / на границе / не держу / знаю наоборот. «не знаю» и «знаю напротив» — разные состояния и лечатся по-разному.",
 							},
 							confidence: {
 								type: "integer",
@@ -54,6 +55,28 @@ export const RAW_TOOL_SCHEMAS: readonly RawTool[] = [
 						},
 					},
 				},
+			},
+		},
+	},
+	{
+		name: "goal_state",
+		description: "Зафиксировать цель урока: конкретное состояние, к которому идём, и критерий готовности.",
+		parameters: {
+			type: "object",
+			additionalProperties: false,
+			required: ["statements", "ready_when"],
+			properties: {
+				statements: {
+					type: "array",
+					description: "По формулировке на каждый пункт цели — что ученик сможет сделать или сказать.",
+					items: { type: "string", minLength: 1 },
+				},
+				ready_when: {
+					type: "string",
+					minLength: 1,
+					description: "По чему видно, что цель достигнута: проверка, а не ощущение.",
+				},
+				raw: { type: "string", minLength: 1, description: "Слова ученика, из которых выросла цель." },
 			},
 		},
 	},
@@ -108,20 +131,22 @@ export const RAW_TOOL_SCHEMAS: readonly RawTool[] = [
 	},
 	{
 		name: "update_step",
-		description: "Записать итог проверки шага после ответа ученика.",
+		description:
+			"Починить показанный шаг: новая формулировка, мотивировка или опора. Принятый учеником шаг не правится — итог проверки пишет не модель.",
 		parameters: {
 			type: "object",
 			additionalProperties: false,
-			required: ["step_id", "verdict", "hint_count"],
+			required: ["step_id"],
 			properties: {
 				step_id: idField,
-				verdict: { type: "string", enum: ["correct", "incorrect", "partial"] },
-				hint_count: {
-					type: "integer",
-					minimum: 0,
-					description: "Сколько подсказок понадобилось; ответ с подсказки — не held.",
+				statement: { type: "string", minLength: 1, description: "Новая формулировка шага." },
+				kind: { type: "string", enum: ["derivation", "foundation"] },
+				premises: {
+					type: "array",
+					description: "Новые опоры; пусто — узел, неоткуда вывести.",
+					items: idField,
 				},
-				note: { type: "string", minLength: 1, description: "Где именно свернуло не туда." },
+				motivation: { type: "string", minLength: 1, description: "Зачем шаг, каким он стал." },
 			},
 		},
 	},

@@ -113,7 +113,12 @@ test("a check that asked for confidence refuses an answer without it", async () 
 test("a free-form answer is compared with the reference by the model", async () => {
 	const { db, sessionId, stepId } = startedLesson();
 	ask(db, sessionId, stepId, freeRecall);
-	const transport = createFakeTransport({ turns: [{ text: '{"reason":"смысл совпал","verdict":"correct"}' }] });
+	const transport = createFakeTransport({
+		turns: [
+			{ calls: [{ args: { reason: "смысл совпал", verdict: "correct" }, id: "grade-1", name: "grade_answer" }] },
+			{ text: "" },
+		],
+	});
 
 	const outcome = await service(db, transport).answer(sessionId, { answer: "частицы быстрее бегают", confidence: 3 });
 	assert.equal(outcome.verdict, "correct");
@@ -121,14 +126,19 @@ test("a free-form answer is compared with the reference by the model", async () 
 	// The judging request carried the reference: the model compares, it does not recall.
 	const sent = transport.calls()[0]!.request.messages[0]!.content[0]!;
 	assert.match(sent.type === "text" ? sent.text : "", /Эталон: частицы движутся быстрее/);
+	assert.deepEqual(
+		transport.calls()[0]!.request.tools.map((tool) => tool.name),
+		["grade_answer"],
+	);
 });
 
 test("a judge that answers with prose is refused, and the check stays open", async () => {
 	const { db, sessionId, stepId } = startedLesson();
 	ask(db, sessionId, stepId, freeRecall);
-	const transport = createFakeTransport({ turns: [{ text: "кажется, верно" }] });
+	// Prose instead of a call: the loop asks once more, and the answer is still not taken.
+	const transport = createFakeTransport({ turns: [{ text: "кажется, верно" }, { text: "ну, в целом правильно" }, { text: "верно" }] });
 
-	await assert.rejects(service(db, transport).answer(sessionId, { answer: "ну быстрее", confidence: 2 }), /оценка не разобрана/);
+	await assert.rejects(service(db, transport).answer(sessionId, { answer: "ну быстрее", confidence: 2 }), /оценка не получена/);
 	assert.notEqual(pendingCheck(db, sessionId), null, "the check must still be open");
 });
 

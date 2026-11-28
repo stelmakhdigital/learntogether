@@ -16,7 +16,7 @@ import type { ModelSettings } from "./config.ts";
 import { fitRequest, unmetCheck } from "./context.ts";
 import { createAnswerService, type AnswerService } from "./teach/answer.ts";
 import { TEACHER_PROMPT } from "./teach/prompt.ts";
-import { createStepTools } from "./teach/steps.ts";
+import { createTeachTools } from "./teach/tools.ts";
 import { budgetFor, TurnRunner } from "./turn.ts";
 
 /** Single configured endpoint for now. shortcut: N profiles and role_assignment
@@ -108,9 +108,9 @@ export async function composeTurnRunner(deps: ComposeDeps): Promise<Composition>
 
 	const runner = new TurnRunner(db, {
 		transport,
-		registry: (database, sessionId) => new ToolRegistry(createStepTools(database, sessionId)),
+		registry: (database, sessionId) => new ToolRegistry(createTeachTools(database, sessionId)),
 		buildRequest: async (sessionId) => {
-			const registry = new ToolRegistry(createStepTools(db, sessionId));
+			const registry = new ToolRegistry(createTeachTools(db, sessionId));
 			return fitRequest({
 				counter,
 				db,

@@ -15,6 +15,9 @@ import {
 	presentStep,
 	recordCheck,
 	resolveCheck,
+	setPlan,
+	setSessionGoal,
+	upsertProbe,
 	activeSummary,
 } from "@learntogether/data";
 import { createFakeTransport } from "@learntogether/models";
@@ -215,4 +218,26 @@ test("a step the learner holds is closed for the model and sends it to the next 
 		lessonStateBlock(db, sessionId),
 		/принят учеником — к этому шагу больше не возвращайся, следующий вызов: record_step для нового шага/,
 	);
+});
+
+test("the state block sends the lesson through its phases by the tool it lacks", () => {
+	const { db, sessionId } = startedSession();
+	// Nothing measured yet: the model is sent to the probe, not to a step.
+	assert.match(lessonStateBlock(db, sessionId), /замера нет:.*probe_record, шагов пока не пиши/);
+
+	upsertProbe(db, { confidence: 4, sessionId, state: "frontier", statement: "Что измеряет производная" });
+	upsertProbe(db, { confidence: 5, sessionId, state: "contradicted", statement: "Производная — это площадь" });
+	assert.match(lessonStateBlock(db, sessionId), /замер есть: следующий вызов goal_state/);
+	assert.match(lessonStateBlock(db, sessionId), /на границе: Что измеряет производная/);
+	assert.match(lessonStateBlock(db, sessionId), /заблуждение \(знает наоборот\): Производная — это площадь/);
+
+	setSessionGoal(db, { raw: "разобраться", readyWhen: "сам выведет", sessionId, statements: ["вывести перестановку"] });
+	const withGoal = lessonStateBlock(db, sessionId);
+	assert.match(withGoal, /цель: вывести перестановку; готовность: сам выведет/);
+	assert.match(withGoal, /цель есть: следующий вызов plan_set/);
+
+	setPlan(db, { nodes: [{ label: "Скорость изменения", nodeId: "n1", whyNeeded: "первая ступень" }], sessionId });
+	const withPlan = lessonStateBlock(db, sessionId);
+	assert.match(withPlan, /план: n1 — Скорость изменения/);
+	assert.doesNotMatch(withPlan, /следующий вызов plan_set/);
 });

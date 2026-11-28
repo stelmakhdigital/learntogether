@@ -160,3 +160,35 @@ test("the same wording twice in one lesson is refused with the id to reuse", () 
 	assert.equal(createStep(db, { sessionId, statement: "другая формулировка", kind: "foundation", premises: [] }).ordinal, 2);
 	db.close();
 });
+
+test("a step waits for one answer at a time", () => {
+	const db = openedDb();
+	const sessionId = createSession(db, { kind: "teach" });
+	const step = createStep(db, { kind: "foundation", sessionId, statement: "Нагрев ускоряет частицы" });
+	presentStep(db, step.id);
+
+	const check = recordCheck(db, {
+		answer: "частицы движутся быстрее",
+		askConfidence: true,
+		kind: "free_recall",
+		question: "перескажи шаг",
+		stepId: step.id,
+	});
+
+	// The same step cannot queue a second question while the first is unanswered.
+	assert.throws(
+		() => recordCheck(db, { answer: "быстрее", kind: "free_recall", question: "а теперь ещё раз", stepId: step.id }),
+		new RegExp(`уже ждёт ответа на проверку ${check}`),
+	);
+
+	// Answering moves the step to repair, and a repaired step has to be shown again
+	// before it can be checked again: the learner is asked about the repaired
+	// wording, not about the same one a second time.
+	resolveCheck(db, check, { confidence: 3, learnerAnswer: "быстрее", verdict: "incorrect" });
+	assert.throws(
+		() => recordCheck(db, { answer: "быстрее", kind: "free_recall", question: "после ремонта перескажи", stepId: step.id }),
+		/is "repaired"/,
+	);
+	presentStep(db, step.id);
+	assert.ok(recordCheck(db, { answer: "быстрее", kind: "free_recall", question: "после ремонта перескажи", stepId: step.id }));
+});

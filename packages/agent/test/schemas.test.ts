@@ -6,6 +6,7 @@ import { RAW_TOOL_SCHEMAS, TOOL_SCHEMAS } from "@learntogether/agent";
 const TOOL_NAMES = [
 	"check_understanding",
 	"doubt_add",
+	"goal_state",
 	"plan_set",
 	"present_step",
 	"probe_record",
@@ -39,7 +40,12 @@ const VALID_ARGS: Record<ToolName, Record<string, unknown>> = {
 		premises: [],
 		motivation: "Отвечает на вопрос «зачем вообще менять местами»",
 	},
-	update_step: { step_id: "s1", verdict: "correct", hint_count: 0, note: null },
+	update_step: { step_id: "s1", statement: "Сумма не меняется от порядка слагаемых", motivation: null },
+	goal_state: {
+		statements: ["Объяснить, почему сумма не зависит от порядка"],
+		ready_when: "ученик сам выводит перестановку на новых числах",
+		raw: null,
+	},
 	present_step: { step_id: "s1", text: "Сложи 3 и 4, а потом 4 и 3 — результат один и тот же." },
 	check_understanding: {
 		step_id: "s1",

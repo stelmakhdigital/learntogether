@@ -16,6 +16,8 @@
 import type Database from "better-sqlite3";
 import {
 	activeSummary,
+	activePlan,
+	goalForSession,
 	checksForStep,
 	foldTranscript,
 	probesForSession,
@@ -63,8 +65,49 @@ function liveEntries(db: Database.Database, sessionId: string): LiveEntry[] {
 /** The durable lesson state in the method's own words. Without this the teacher
  *  starts the lesson from zero on every turn — the failure the live check of
  *  2026-11-28 caught on a real model. */
+/** Head of a list, with the rest counted rather than dumped: the state block is
+ *  read every turn, and a long plan must not eat the lesson's window. */
+function listed(items: string[], limit = 8): string {
+	if (items.length <= limit) return items.join("; ");
+	return `${items.slice(0, limit).join("; ")}; ещё ${items.length - limit}`;
+}
+
 export function lessonStateBlock(db: Database.Database, sessionId: string): string {
 	const lines: string[] = ["Состояние урока:"];
+	const goal = goalForSession(db, sessionId);
+	const plan = activePlan(db, sessionId);
+	const probes = probesForSession(db, sessionId);
+
+	// Phase by what the lesson actually has. A model that skipped a phase is sent
+	// back to it by name instead of being left to guess why its calls get refused.
+	if (probes.length === 0) {
+		lines.push("- замера нет: спроси ученика и запиши результат probe_record, шагов пока не пиши");
+	} else if (goal === null) {
+		lines.push("- замер есть: следующий вызов goal_state — пункты цели и критерий готовности");
+	} else if (plan === null) {
+		lines.push("- цель есть: следующий вызов plan_set — дерево узлов, каждому с зачем");
+	}
+
+	if (goal !== null) {
+		lines.push(`- цель: ${listed(goal.statements)}; готовность: ${goal.readyWhen ?? "не задана"}`);
+	}
+	if (plan !== null) {
+		const todo = plan.nodes.filter((node) => node.state === "todo");
+		const pruned = plan.nodes.filter((node) => node.state === "pruned_held");
+		lines.push(`- план: ${listed(todo.map((node) => `${node.nodeId} — ${node.label}`))}`);
+		if (pruned.length > 0) {
+			lines.push(`- из плана убрано как держимое: ${listed(pruned.map((node) => node.label))}`);
+		}
+	}
+	// A misconception is named apart from ignorance: the method treats them
+	// differently, and the model has to see which one it is dealing with.
+	const wrong = probes.filter((probe) => probe.state === "contradicted").map((probe) => probe.statement);
+	const frontier = probes.filter((probe) => probe.state === "frontier").map((probe) => probe.statement);
+	const absent = probes.filter((probe) => probe.state === "absent").map((probe) => probe.statement);
+	if (wrong.length > 0) lines.push(`- заблуждение (знает наоборот): ${listed(wrong)}`);
+	if (frontier.length > 0) lines.push(`- на границе: ${listed(frontier)}`);
+	if (absent.length > 0) lines.push(`- не держит: ${listed(absent)}`);
+
 	const steps = stepsForSession(db, sessionId);
 	if (steps.length === 0) {
 		lines.push("- шагов ещё нет: первый запиши record_step, потом покажи present_step");
@@ -98,7 +141,7 @@ export function lessonStateBlock(db: Database.Database, sessionId: string): stri
 		lines.push(`- ${parts.join(" | ")}`);
 	}
 
-	const held = probesForSession(db, sessionId).filter((probe) => probe.state === "held");
+	const held = probes.filter((probe) => probe.state === "held");
 	if (held.length > 0) {
 		lines.push(`- ученик уже держит: ${held.map((probe) => probe.statement).join("; ")}`);
 	}

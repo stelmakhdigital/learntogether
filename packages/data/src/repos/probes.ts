@@ -94,11 +94,14 @@ export function upsertProbe(
 	return run();
 }
 
+/** Probes of a session in the order they were recorded. `rowid` breaks ties, not
+ *  `id`: ids are random, so two probes written in the same millisecond would come
+ *  back in a different order on every read (measured in the test suite). */
 export function probesForSession(db: Database.Database, sessionId: string): ProbeRow[] {
 	const rows = db
 		.prepare(
 			`SELECT id, session_id, goal_id, statement, state, confidence, basis_entry_id, created_at
-			 FROM probe_item WHERE session_id = ? ORDER BY created_at ASC, id ASC`,
+			 FROM probe_item WHERE session_id = ? ORDER BY created_at ASC, rowid ASC`,
 		)
 		.all(sessionId) as Record<string, unknown>[];
 	return rows.map(rowToProbe);

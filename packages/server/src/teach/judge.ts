@@ -6,8 +6,9 @@
 // "partial".
 
 import type Database from "better-sqlite3";
+import { runTurn, ToolRegistry, type ToolPort } from "@learntogether/agent";
 import { openChecksForSession, type CheckOption, type CheckRow } from "@learntogether/data";
-import { validateArgs, type Budget, type Transport } from "@learntogether/models";
+import type { Budget, Transport } from "@learntogether/models";
 import type { CheckVerdict } from "@learntogether/domain";
 
 /** The answer in the words the learner used. An option index becomes that option,
@@ -65,7 +66,7 @@ function learnerAnswerLabel(options: CheckOption[], given: string): string {
 	return given;
 }
 
-const VERDICT_SCHEMA = {
+const GRADE_SCHEMA = {
 	additionalProperties: false,
 	properties: {
 		reason: { minLength: 1, type: "string" },
@@ -75,11 +76,11 @@ const VERDICT_SCHEMA = {
 	type: "object",
 } as const;
 
-const JUDGE_PROMPT = `Ты сверяешь ответ ученика с эталоном. Верни объект из двух полей:
+const GRADE_SYSTEM = `Ты сверяешь ответ ученика с эталоном и вызываешь grade_answer.
 "verdict" — "correct" (смысл совпадает с эталоном), "incorrect" (не совпадает) или
 "partial" (часть смысла есть, часть потеряна); "reason" — одна фраза, где именно
 расхождение. Оценивай смысл, а не дословное совпадение и не детали, которых в
-эталопе нет. Других слов не верни.`;
+эталопе нет. Отвечай вызовом инструмента, а не текстом.`;
 
 /** Compare a free-form answer with the reference through the model. */
 export async function judgeAnswer(
@@ -89,46 +90,43 @@ export async function judgeAnswer(
 	answer: string,
 	signal?: AbortSignal,
 ): Promise<{ verdict: CheckVerdict; reason: string }> {
-	const brief = [
-		`Вопрос: ${check.question}`,
-		`Эталон: ${typeof check.answer === "number" ? (check.options[check.answer]?.text ?? check.answer) : check.answer}`,
-		`Ответ ученика: ${answer}`,
-	].join("\n");
+	const reference = typeof check.answer === "number" ? (check.options[check.answer]?.text ?? String(check.answer)) : check.answer;
+	const brief = [`Вопрос: ${check.question}`, `Эталон: ${reference}`, `Ответ ученика: ${answer}`].join("\n");
 
-	const parts: string[] = [];
-	const request = {
-		budget,
-		messages: [{ content: [{ text: brief, type: "text" as const }], role: "user" as const }],
-		reasoningLevel: "none" as const,
-		system: JUDGE_PROMPT,
-		tools: [],
+	let graded: { reason: string; verdict: CheckVerdict } | null = null;
+	const tool: ToolPort = {
+		description: "Записать итог сверки ответа ученика с эталоном.",
+		name: "grade_answer",
+		run: (args: Record<string, unknown>) => {
+			graded = { reason: String(args.reason), verdict: args.verdict as CheckVerdict };
+			return "итог принят";
+		},
+		schema: GRADE_SCHEMA,
 	};
-	for await (const event of transport.stream(request, signal)) {
-		if (event.type === "text_delta") parts.push(event.text);
-		if (event.type === "done" && event.stop !== "end") {
-			throw new Error(
-				`оценка не получилась: модель оборвала ответ (${event.stop})${event.error === undefined ? "" : ` — ${event.error}`}`,
-			);
-		}
+	const registry = new ToolRegistry([tool]);
+	// The verdict arrives as a tool call, not as free text: the loop's reparation
+	// of broken arguments then works here too. A 7B model asked for a JSON object
+	// answered with a prose list of keys (live check 2026-11-28), which threw the
+	// learner's answer away.
+	const result = await runTurn({
+		maxSteps: 3,
+		registry,
+		request: {
+			budget,
+			messages: [{ content: [{ text: brief, type: "text" as const }], role: "user" as const }],
+			reasoningLevel: "none",
+			system: GRADE_SYSTEM,
+			tools: registry.definitions(),
+		},
+		...(signal === undefined ? {} : { signal }),
+		transport,
+	});
+	if (graded === null) {
+		throw new Error(
+			`оценка не получена: модель не вызвала grade_answer${result.text === "" ? "" : ` — её слова: ${result.text.slice(0, 200)}`}`,
+		);
 	}
-
-	const raw = parts.join("").trim();
-	let parsed: unknown;
-	try {
-		parsed = JSON.parse(raw) as unknown;
-	} catch {
-		throw new Error(`оценка не разобрана: модель ответила не объектом — ${raw.slice(0, 200)}`);
-	}
-	if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-		throw new Error(`оценка не разобрана: ожидается объект, получено ${JSON.stringify(parsed)} — ${raw.slice(0, 200)}`);
-	}
-	const candidate = parsed as Record<string, unknown>;
-	const problems = validateArgs(VERDICT_SCHEMA, candidate);
-	if (problems.length > 0) {
-		throw new Error(`оценка не прошла проверку схемы: ${problems.join("; ")} — ${raw.slice(0, 200)}`);
-	}
-	const value = candidate as unknown as { reason: string; verdict: CheckVerdict };
-	return { reason: value.reason, verdict: value.verdict };
+	return graded;
 }
 
 /** The check the learner is expected to answer now. More than one open check is a

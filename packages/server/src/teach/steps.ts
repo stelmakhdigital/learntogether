@@ -34,21 +34,37 @@ type StepRow = {
 	state: StepState;
 };
 
+/** Ids the lesson has, so a refusal can be answered without guessing. */
+function listStepIds(db: Database.Database, sessionId: string): string {
+	const rows = db.prepare("SELECT ordinal, id FROM step WHERE session_id = ? ORDER BY ordinal").all(sessionId) as {
+		id: string;
+		ordinal: number;
+	}[];
+	if (rows.length === 0) return "ни одного, первый запиши record_step";
+	return rows.map((row) => `${row.ordinal} → ${row.id}`).join(", ");
+}
+
 function requireOwnStep(db: Database.Database, sessionId: string, stepId: string): StepRow {
 	const row = db
 		.prepare("SELECT id, session_id, ordinal, statement, kind, state FROM step WHERE id = ?")
 		.get(stepId) as StepRow | undefined;
 	if (row === undefined) {
-		// A real model reaches for the ordinal it sees in the lesson ("step 1") instead
-		// of the id. Naming the step it probably meant is the difference between a
-		// corrected call and a wasted round.
-		const byOrdinal = db
-			.prepare("SELECT ordinal, id FROM step WHERE session_id = ? AND ordinal = ?")
-			.get(sessionId, Number(stepId)) as { ordinal: number; id: string } | undefined;
-		if (byOrdinal !== undefined && Number.isInteger(Number(stepId))) {
-			throw new Error(`шага со step_id "${stepId}" нет: это номер шага, а нужен его id — шаг ${byOrdinal.ordinal} имеет id ${byOrdinal.id}`);
+		// A real model reaches for the ordinal it sees in the lesson («шаг 1») instead
+		// of the id, and refuses to learn the id between calls (live checks 2026-11-28,
+		// twice). The ordinal is unique inside a session, so it names one step: we take
+		// it as an alias and answer with the canonical id, which the model then reuses.
+		const alias = Number(stepId);
+		if (Number.isInteger(alias) && alias > 0) {
+			const byOrdinal = db
+				.prepare("SELECT id FROM step WHERE session_id = ? AND ordinal = ?")
+				.get(sessionId, alias) as { id: string } | undefined;
+			if (byOrdinal !== undefined) {
+				return db
+					.prepare("SELECT id, session_id, ordinal, statement, kind, state FROM step WHERE id = ?")
+					.get(byOrdinal.id) as StepRow;
+			}
 		}
-		throw new Error(`шага ${stepId} нет`);
+		throw new Error(`шага ${stepId} нет; шаги этого урока: ${listStepIds(db, sessionId)}`);
 	}
 	if (row.session_id !== sessionId) throw new Error(`шаг ${stepId} не из этой сессии`);
 	return row;
@@ -142,10 +158,9 @@ export function createStepTools(db: Database.Database, sessionId: string): ToolP
 		description: TOOL_SCHEMAS.update_step!.description,
 		schema: TOOL_SCHEMAS.update_step!.parameters,
 		run(args: Record<string, unknown>): string {
-			const stepId = requireString(args, "step_id");
-			const step = requireOwnStep(db, sessionId, stepId);
+			const step = requireOwnStep(db, sessionId, requireString(args, "step_id"));
 			if (step.state === "accepted") {
-				throw new Error(`шаг ${stepId} в состоянии "accepted" — принятую формулировку не правим`);
+				throw new Error(`шаг ${step.id} в состоянии "accepted" — принятую формулировку не правим`);
 			}
 			const statement = optionalString(args, "statement");
 			const motivation = optionalString(args, "motivation");
@@ -157,7 +172,7 @@ export function createStepTools(db: Database.Database, sessionId: string): ToolP
 			if (hasPremises) {
 				const premises = requireStringArray(args.premises, "premises");
 				if (kindRequiresPremises(step.kind) && premises.length === 0) {
-					throw new Error(`шаг ${stepId} — "${step.kind}": premises не может быть пустым`);
+					throw new Error(`шаг ${step.id} — "${step.kind}": premises не может быть пустым`);
 				}
 				premisesJson = JSON.stringify(premises);
 			}
@@ -169,8 +184,8 @@ export function createStepTools(db: Database.Database, sessionId: string): ToolP
 				     motivation = COALESCE(?, motivation),
 				     premises_json = COALESCE(?, premises_json)
 				 WHERE id = ?`,
-			).run(statement ?? null, motivation ?? null, premisesJson ?? null, stepId);
-			return `обновлён шаг ${stepId}`;
+			).run(statement ?? null, motivation ?? null, premisesJson ?? null, step.id);
+			return `обновлён шаг ${step.id}`;
 		},
 	};
 
@@ -179,11 +194,10 @@ export function createStepTools(db: Database.Database, sessionId: string): ToolP
 		description: TOOL_SCHEMAS.present_step!.description,
 		schema: TOOL_SCHEMAS.present_step!.parameters,
 		run(args: Record<string, unknown>): string {
-			const stepId = requireString(args, "step_id");
-			const step = requireOwnStep(db, sessionId, stepId);
+			const step = requireOwnStep(db, sessionId, requireString(args, "step_id"));
 			const next = nextStepState(step.state, "present");
 			if (typeof next !== "string") {
-				throw new Error(`шаг ${stepId} в состоянии "${step.state}" — показать нельзя`);
+				throw new Error(`шаг ${step.id} в состоянии "${step.state}" — показать нельзя`);
 			}
 			// The wording that enters the transcript is the step's own, taken from
 			// storage; the explanation text the model sent survives as the tool_call
@@ -194,7 +208,7 @@ export function createStepTools(db: Database.Database, sessionId: string): ToolP
 				role: "teacher",
 				text: step.statement,
 			});
-			presentStep(db, stepId);
+			presentStep(db, step.id);
 			// The result names the next required call: a small local model that finished
 			// the step and stopped talking left the step without a check (live check
 			// 2026-11-28), and the method does not allow a step without one.
@@ -207,8 +221,7 @@ export function createStepTools(db: Database.Database, sessionId: string): ToolP
 		description: TOOL_SCHEMAS.check_understanding!.description,
 		schema: TOOL_SCHEMAS.check_understanding!.parameters,
 		run(args: Record<string, unknown>): string {
-			const stepId = requireString(args, "step_id");
-			const step = requireOwnStep(db, sessionId, stepId);
+			const step = requireOwnStep(db, sessionId, requireString(args, "step_id"));
 			// The repository refuses a check on a step that is not presented; naming the
 			// call the lesson really owes turns that refusal into a course change.
 			if (step.state === "accepted") {
@@ -227,7 +240,7 @@ export function createStepTools(db: Database.Database, sessionId: string): ToolP
 			}
 			const why = optionalString(args, "why");
 			const checkId = recordCheck(db, {
-				stepId,
+				stepId: step.id,
 				kind,
 				question: requireString(args, "question"),
 				...(options === null ? {} : { options }),
@@ -235,7 +248,10 @@ export function createStepTools(db: Database.Database, sessionId: string): ToolP
 				...(why === undefined ? {} : { why }),
 				askConfidence: args.ask_confidence !== false,
 			});
-			return `проверка ${checkId}`;
+			// The answer comes from the learner, not from the teacher: a model that had
+			// just opened a check went on to praise an answer nobody had given yet
+			// (live check 2026-11-28).
+			return `проверка ${checkId} открыта и ждёт ответа ученика; до ответа ничего не спрашивай, не пересказывай шаг и не хвали`;
 		},
 	};
 

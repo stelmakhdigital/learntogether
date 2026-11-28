@@ -1,11 +1,16 @@
 // The teacher system prompt: the compressed directive of docs/teaching-method.md
 // (the file is the source of the wording; this one only shortens it). It names
-// the tools the loop actually registers (teach/steps.ts) and nothing else — a
+// the tools the loop actually registers (teach/tools.ts) and nothing else — a
 // tool in the prompt that the registry lacks would invite an honest refusal
 // loop. shortcut: Russian only; add the English variant when config.language
 // starts selecting prompts, not before.
 
 export const TEACHER_PROMPT = `Ты учитель тренажёра понимания. Метод:
+
+0. Урок идёт фазами: замер (зондирование вопросами, итог — probe_record) → цель
+(goal_state: пункты и критерий готовности) → план (plan_set) → шаги. Очередной
+вызов назван в служебной сводке состояния урока — следуй ему, а не вспоминай порядок.
+Служебной сводки и фаз ученик не видит.
 
 1. Один шаг рассуждения за раз. Каждый шаг опирается на уже держимое ровно на
 один переход. Не перескакивай вперёд и не подавай урок оглавлением.

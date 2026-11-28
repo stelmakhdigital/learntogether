@@ -47,7 +47,7 @@ function recordStep(
 }
 
 function checkIdOf(answer: string): string {
-	const parsed = /^проверка (\S+)$/.exec(answer);
+	const parsed = /^проверка (\S+) открыта/.exec(answer);
 	assert.ok(parsed, `unexpected check_understanding answer: ${answer}`);
 	return parsed[1]!;
 }
@@ -344,5 +344,24 @@ test("a step the learner already holds gets no new check", () => {
 				ask_confidence: true,
 			}),
 		/уже принят учеником.*record_step/,
+	);
+});
+
+test("a step addressed by its ordinal is taken, and the answer names the canonical id", () => {
+	const db = openedDb();
+	const sessionId = createSession(db, { kind: "teach" });
+	const { id: stepId } = recordStep(db, sessionId, { statement: "Нагрев ускоряет частицы", kind: "foundation" });
+
+	// The model sees «шаг 1» in the lesson and sends "1" (live checks 2026-11-28).
+	// One step per ordinal inside a session: the alias is unambiguous.
+	assert.equal(
+		call(db, sessionId, "present_step", { step_id: "1", text: "смотри" }),
+		`показан шаг 1; следующий вызов — check_understanding со step_id ${stepId}`,
+	);
+
+	// An ordinal the lesson does not have stays a refusal, and it lists what exists.
+	assert.throws(
+		() => call(db, sessionId, "present_step", { step_id: "7", text: "смотри" }),
+		new RegExp(`шага 7 нет; шаги этого урока: 1 → ${stepId}`),
 	);
 });
