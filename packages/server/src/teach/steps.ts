@@ -208,7 +208,14 @@ export function createStepTools(db: Database.Database, sessionId: string): ToolP
 		schema: TOOL_SCHEMAS.check_understanding!.parameters,
 		run(args: Record<string, unknown>): string {
 			const stepId = requireString(args, "step_id");
-			requireOwnStep(db, sessionId, stepId);
+			const step = requireOwnStep(db, sessionId, stepId);
+			// The repository refuses a check on a step that is not presented; naming the
+			// call the lesson really owes turns that refusal into a course change.
+			if (step.state === "accepted") {
+				throw new Error(
+					`шаг ${step.ordinal} уже принят учеником — проверок ему больше не нужно; следующий вызов: record_step для следующего шага`,
+				);
+			}
 			const rawKind = requireString(args, "kind");
 			const kind = CHECK_KINDS.find((candidate) => candidate === rawKind);
 			if (kind === undefined) {

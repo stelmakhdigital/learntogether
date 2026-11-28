@@ -35,6 +35,10 @@ export interface TurnDeps {
 	 *  route appended them before the turn started — so the context is read from
 	 *  the database and does not depend on what a client chose to resend. */
 	buildRequest(sessionId: string): Promise<Request>;
+	/** The method invariant «no step without a check» is not a hope: when a turn
+	 *  ends with a step shown and no check recorded, this returns the words that
+	 *  send the model back to the call, or null when the lesson is consistent. */
+	unmetCheck?(sessionId: string): string | null;
 }
 
 interface Subscriber {
@@ -74,6 +78,11 @@ export class TurnRunner {
 		return turn;
 	}
 }
+
+/** How many times a turn is sent back for an unmet invariant. One retry is the
+ *  point: a second silence is a model problem the learner should see, not a loop
+ *  that burns the budget. */
+const CHECK_RETRIES = 1;
 
 class ActiveTurn implements TurnHandle {
 	private readonly listeners = new Set<Subscriber>();
@@ -167,7 +176,7 @@ class ActiveTurn implements TurnHandle {
 				return { calls: [], stop: "error", text: "", turnId: this.turnId };
 			}
 			const registry = deps.registry(this.db, this.sessionId);
-			const result = await runTurn({
+			let result = await runTurn({
 				onEvent: (event) => this.emit(event),
 				registry,
 				request,
@@ -177,6 +186,31 @@ class ActiveTurn implements TurnHandle {
 			if (result.text !== "") {
 				appendEntry(this.db, { kind: "text", role: "teacher", sessionId: this.sessionId, text: result.text });
 			}
+
+			// «Ни одного шага без проверки» is an invariant of the method, so it is
+			// checked rather than requested: a shown step with no check sends the model
+			// back to the call once. The retry gets a fresh context from the database, so
+			// no half-finished tool exchange is replayed.
+			for (let retry = 0; retry < CHECK_RETRIES; retry += 1) {
+				const words = result.stop === "end" ? (deps.unmetCheck?.(this.sessionId) ?? null) : null;
+				if (words === null || this.controller.signal.aborted) break;
+				const base = await deps.buildRequest(this.sessionId);
+				const again = await runTurn({
+					onEvent: (event) => this.emit(event),
+					registry: deps.registry(this.db, this.sessionId),
+					request: {
+						...base,
+						messages: [...base.messages, { content: [{ text: words, type: "text" }], role: "user" }],
+					},
+					signal: this.controller.signal,
+					transport: deps.transport,
+				});
+				if (again.text !== "") {
+					appendEntry(this.db, { kind: "text", role: "teacher", sessionId: this.sessionId, text: again.text });
+				}
+				result = { ...again, text: `${result.text}${result.text === "" ? "" : "\n"}${again.text}` };
+			}
+
 			return { calls: result.calls, stop: result.stop, text: result.text, turnId: this.turnId };
 		} finally {
 			this.listeners.clear();

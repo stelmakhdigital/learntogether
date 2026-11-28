@@ -14,6 +14,7 @@ import {
 	openDb,
 	presentStep,
 	recordCheck,
+	resolveCheck,
 	activeSummary,
 } from "@learntogether/data";
 import { createFakeTransport } from "@learntogether/models";
@@ -195,4 +196,23 @@ test("a summarizer that refuses stops the turn with its own words", async () => 
 	const broken = createFakeTransport({ turns: [{ error: "llama-server: загрузка модели не удалась" }] });
 
 	await assert.rejects(fit(db, sessionId, { budget: { input: 40, output: 200 } }, broken), /компакция не удалась/);
+});
+
+test("a step the learner holds is closed for the model and sends it to the next one", () => {
+	const { db, sessionId } = startedSession();
+	const step = createStep(db, { kind: "foundation", motivation: "без него дальше нечего опереть", sessionId, statement: "Производная — скорость изменения." });
+	presentStep(db, step.id);
+	const checkId = recordCheck(db, {
+		answer: 1,
+		kind: "single_choice",
+		options: [{ label: "0", text: "наклон" }, { label: "1", text: "скорость" }],
+		question: "Что измеряет производная?",
+		stepId: step.id,
+	});
+	resolveCheck(db, checkId, { confidence: 4, learnerAnswer: 1, rating: "good", verdict: "correct" });
+
+	assert.match(
+		lessonStateBlock(db, sessionId),
+		/принят учеником — к этому шагу больше не возвращайся, следующий вызов: record_step для нового шага/,
+	);
 });

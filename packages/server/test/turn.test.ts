@@ -6,6 +6,9 @@ import { createFakeTransport } from "@learntogether/models";
 import type { Request, Transport, TransportEvent } from "@learntogether/models";
 import { createSession, entries, migrate, openDb } from "@learntogether/data";
 import { createApp } from "../src/app.ts";
+import { unmetCheck } from "../src/context.ts";
+import { createStepTools } from "../src/teach/steps.ts";
+import { pendingCheck } from "../src/teach/judge.ts";
 import { DEFAULT_PORT, type Config } from "../src/config.ts";
 import { TurnRunner, budgetFor } from "../src/turn.ts";
 
@@ -225,6 +228,99 @@ test("a transport that throws closes the live stream with one honest error finis
 	const teacher = entries(db, sessionId).filter((entry) => entry.role === "teacher");
 	assert.equal(teacher.length, 1);
 	assert.match(teacher[0]!.text, /вектор — это/);
+});
+
+/** Runs one tool by name and returns its result as text. */
+function runTool(db: ReturnType<typeof openDb>, sessionId: string, name: string, args: Record<string, unknown>): string {
+	const tool = createStepTools(db, sessionId).find((candidate) => candidate.name === name);
+	assert.ok(tool, `tool ${name} is missing`);
+	return String(tool.run(args, `${name}-call`));
+}
+
+test("a turn that showed a step without a check is sent back to the call once", async () => {
+	const db = startedDb();
+	const sessionId = createSession(db, { kind: "teach" });
+	const tools = (id: string) => new ToolRegistry(createStepTools(db, id));
+	const recorded = /шаг (\S+) под/.exec(runTool(db, sessionId, "record_step", { kind: "foundation", premises: [], statement: "шаг" }))![1]!;
+	runTool(db, sessionId, "present_step", { step_id: recorded, text: "смотри шаг" });
+
+	// The model shows the step, says something, and never opens the check.
+	const transport = createFakeTransport({
+		turns: [
+			{ text: "вот шаг" },
+			{
+				calls: [
+					{
+						args: { answer: ["шаг"], ask_confidence: true, kind: "free_recall", question: "перескажи", step_id: recorded },
+						id: "call-check",
+						name: "check_understanding",
+					},
+				],
+				text: "",
+			},
+		],
+	});
+	const runner = new TurnRunner(db, {
+		buildRequest: async (): Promise<Request> => ({
+			budget: { input: 4000, output: 500 },
+			messages: [{ content: [{ text: "объясни шаг", type: "text" }], role: "user" }],
+			reasoningLevel: "none",
+			system: "учитель",
+			tools: tools(sessionId).definitions(),
+		}),
+		registry: (database, id) => new ToolRegistry(createStepTools(database, id)),
+		transport,
+		unmetCheck: (id) => unmetCheck(db, id),
+	});
+
+	await runner.start(sessionId).done;
+
+	// The retry is a second model call, and the words that sent it back name the call.
+	const calls = transport.calls();
+	assert.equal(calls.length, 2);
+	const nudged = calls[1]!.request.messages.at(-1)!.content[0]!;
+	assert.equal(nudged.type, "text");
+	assert.match(nudged.type === "text" ? nudged.text : "", new RegExp(`check_understanding со step_id ${recorded}`));
+	// And the lesson ends consistent: the step has its check open.
+	assert.notEqual(pendingCheck(db, sessionId), null);
+});
+
+test("a turn that opened its check is not sent back a second time", async () => {
+	const db = startedDb();
+	const sessionId = createSession(db, { kind: "teach" });
+	const tools = (id: string) => new ToolRegistry(createStepTools(db, id));
+	const recorded = /шаг (\S+) под/.exec(runTool(db, sessionId, "record_step", { kind: "foundation", premises: [], statement: "шаг" }))![1]!;
+	runTool(db, sessionId, "present_step", { step_id: recorded, text: "смотри шаг" });
+
+	const transport = createFakeTransport({
+		turns: [
+			{
+				calls: [
+					{
+						args: { answer: ["шаг"], ask_confidence: true, kind: "free_recall", question: "перескажи", step_id: recorded },
+						id: "call-check",
+						name: "check_understanding",
+					},
+				],
+				text: "проверь себя",
+			},
+		],
+	});
+	const runner = new TurnRunner(db, {
+		buildRequest: async (): Promise<Request> => ({
+			budget: { input: 4000, output: 500 },
+			messages: [{ content: [{ text: "объясни шаг", type: "text" }], role: "user" }],
+			reasoningLevel: "none",
+			system: "учитель",
+			tools: tools(sessionId).definitions(),
+		}),
+		registry: (database, id) => new ToolRegistry(createStepTools(database, id)),
+		transport,
+		unmetCheck: (id) => unmetCheck(db, id),
+	});
+
+	await runner.start(sessionId).done;
+	assert.equal(transport.calls().length, 1);
 });
 
 test("budget comes from a measured window, never from a guess", () => {

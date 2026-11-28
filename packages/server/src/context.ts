@@ -87,6 +87,8 @@ export function lessonStateBlock(db: Database.Database, sessionId: string): stri
 			parts.push(`проверки нет — следующий вызов: check_understanding со step_id ${step.id}`);
 		} else if (step.state === "planned") {
 			parts.push(`ещё не показан — следующий вызов: present_step со step_id ${step.id}`);
+		} else if (step.state === "accepted" || step.state === "repaired") {
+			parts.push("принят учеником — к этому шагу больше не возвращайся, следующий вызов: record_step для нового шага");
 		}
 		for (const check of checks.filter((item) => item.answeredAt !== null)) {
 			parts.push(
@@ -102,6 +104,22 @@ export function lessonStateBlock(db: Database.Database, sessionId: string): stri
 	}
 	lines.push("- это твоя служебная сводка, не показывай её ученику как раздел урока");
 	return lines.join("\n");
+}
+
+/** The next call the lesson is owed. A shown step without a check is the one
+ *  invariant of the method a model can skip silently, so it is stated as a fact
+ *  the runner can act on, not as a wish in the prompt. */
+export function unmetCheck(db: Database.Database, sessionId: string): string | null {
+	const row = db
+		.prepare(
+			`SELECT s.id, s.ordinal FROM step s
+			 WHERE s.session_id = ? AND s.state = 'presented'
+			   AND NOT EXISTS (SELECT 1 FROM step_check c WHERE c.step_id = s.id)
+			 ORDER BY s.ordinal LIMIT 1`,
+		)
+		.get(sessionId) as { id: string; ordinal: number } | undefined;
+	if (row === undefined) return null;
+	return `Шаг ${row.ordinal} показан и остался без проверки. Метод её требует: вызови check_understanding со step_id ${row.id} прежде чем писать что-либо ещё.`;
 }
 
 /** One model call that returns the summary of what is being folded away. */

@@ -13,7 +13,7 @@ import {
 	type FetchFn,
 } from "@learntogether/models";
 import type { ModelSettings } from "./config.ts";
-import { fitRequest } from "./context.ts";
+import { fitRequest, unmetCheck } from "./context.ts";
 import { createAnswerService, type AnswerService } from "./teach/answer.ts";
 import { TEACHER_PROMPT } from "./teach/prompt.ts";
 import { createStepTools } from "./teach/steps.ts";
@@ -127,6 +127,7 @@ export async function composeTurnRunner(deps: ComposeDeps): Promise<Composition>
 				},
 			});
 		},
+		unmetCheck: (sessionId) => unmetCheck(db, sessionId),
 	});
 
 	const answer = createAnswerService({

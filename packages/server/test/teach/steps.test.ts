@@ -316,3 +316,33 @@ test("update_step edits a presented step and never touches an accepted one", () 
 	);
 	assert.equal(stepsForSession(db, sessionId)[0]!.statement, "вторая формулировка");
 });
+
+test("a step the learner already holds gets no new check", () => {
+	const db = openedDb();
+	const sessionId = createSession(db, { kind: "teach" });
+	const { id: stepId } = recordStep(db, sessionId, { statement: "нагрев ускоряет частицы", kind: "foundation" });
+	call(db, sessionId, "present_step", { step_id: stepId, text: "объяснение" });
+	const checkId = checkIdOf(
+		call(db, sessionId, "check_understanding", {
+			step_id: stepId,
+			kind: "free_recall",
+			question: "перескажи шаг своими словами",
+			answer: ["нагрев ускоряет частицы"],
+			ask_confidence: true,
+		}),
+	);
+	answerCheck(db, sessionId, { checkId, learnerAnswer: "нагрев ускоряет частицы", verdict: "correct", confidence: 4, hints: 0 });
+
+	// The model that re-checks a held step gets the call the lesson owes instead.
+	assert.throws(
+		() =>
+			call(db, sessionId, "check_understanding", {
+				step_id: stepId,
+				kind: "free_recall",
+				question: "а теперь ещё раз",
+				answer: ["нагрев ускоряет частицы"],
+				ask_confidence: true,
+			}),
+		/уже принят учеником.*record_step/,
+	);
+});
