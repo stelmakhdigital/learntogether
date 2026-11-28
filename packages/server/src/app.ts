@@ -340,9 +340,10 @@ export function createApp(deps: AppDeps): FastifyInstance {
 		},
 	);
 
-	// ─── практика ─────────────────────────────────────────────────────────────
-	// Очередь строится по графу и плану повторений (D-009): сначала узлы с открытым
-	// сомнением, потом созревшие, потом новые. Оценка уходит планировщику (D-035).
+	// ─── practice ──────────────────────────────────────────────────────────────
+	// The queue comes from the graph and the repetition plan (D-009): nodes with an
+	// open doubt first, then what is due, then new ones. The rating goes to the
+	// scheduler (D-035).
 	app.get<{ Querystring: { at?: string; limit?: string } }>("/queue", (request, reply) => {
 		const at = request.query.at;
 		if (at !== undefined && Number.isNaN(Date.parse(at))) {

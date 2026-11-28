@@ -1,6 +1,6 @@
-// Очередь практики поверх графа (D-009): элемент = узел + форма (припоминание,
-// рассуждение, перенос). Перенос проверяется отдельно от припоминания: узел может
-// быть стабилен на одном и мёртв на другом.
+// The practice queue over the graph (D-009): an item is a node plus a form
+// (recall, reasoning, transfer). Transfer is checked apart from recall: a node can
+// be stable on one and dead on the other.
 
 import { randomUUID } from "node:crypto";
 import type Database from "better-sqlite3";
@@ -13,7 +13,7 @@ export type QueueRow = {
 	claimId: string;
 	claimText: string;
 	dueAt: string | null;
-	/** true — раньше срока: очередь пустая, и это единственный способ не выдать пустой день. */
+	/** true — served before its due date: the only way an empty day still says why. */
 	early: boolean;
 	hasDoubt: boolean;
 	itemId: string;
@@ -35,8 +35,8 @@ function nowIso(): string {
 	return new Date().toISOString();
 }
 
-/** Элемент практики для узла в конкретной форме. Повторный вызов — это тот же
- *  элемент (UNIQUE (claim_id, method)), а не вторая карточка на один узел. */
+/** A practice item for a node in one form. Asking again returns the same item
+ *  (UNIQUE (claim_id, method)) instead of a second card on one node. */
 export function createRepeatItem(db: Database.Database, input: { claimId: string; method: RepeatMethod }): string {
 	if (!REPEAT_METHODS.includes(input.method)) {
 		throw new Error(`форма повторения "${input.method}" неизвестна; нужны ${REPEAT_METHODS.join(", ")}`);
@@ -66,9 +66,9 @@ function cardOf(row: ItemRow): RepeatCard {
 	};
 }
 
-/** Один повтор элемента: попытка уходит в attempt, состояние планировщика — в
- *  repeat_item. Вердикт попытки выводится из оценки, а не принимается извне: иначе
- *  «частично» и «снова» разошлись бы по разным полям одного события. */
+/** One review: the attempt goes to attempt, the scheduler state to repeat_item.
+ *  The verdict follows from the rating instead of being passed in, or "partial"
+ *  and "again" would disagree inside one event. */
 export function reviewRepeatItem(
 	db: Database.Database,
 	itemId: string,
@@ -104,7 +104,7 @@ export function reviewRepeatItem(
 	return outcome;
 }
 
-/** Один прогон очереди: узел не встречается дважды. */
+/** Nodes inside one chain: they share the reasoning being measured. */
 function claimIdsOfChain(db: Database.Database, claimId: string): string[] {
 	const rows = db
 		.prepare(
@@ -123,11 +123,12 @@ function claimIdsOfChain(db: Database.Database, claimId: string): string[] {
 }
 
 /**
- * Очередь практики. Порядок: узлы с открытым сомнением, потом созревшие по давности,
- * потом новые (у них срока нет). Узлы одной цепочки в одно окно не попадают —
- * планировщик не моделирует семантическую интерференцию, и соседка выдаёт узнавание
- * вместо припоминания (D-038). Если не созрело ничего, возвращается ближайший по
- * сроку элемент с early: иначе экран практики был бы пустым днём без объяснения.
+ * The practice queue. Order: nodes with an open doubt, then what came due by age,
+ * then new nodes (no date yet). Nodes of one chain never share a window — the
+ * scheduler does not model semantic interference, and a neighbour hands out
+ * recognition instead of recall (D-038). When nothing is due, the nearest upcoming
+ * item comes back with early: a practice screen would otherwise be an empty day
+ * with no reason given.
  */
 export function practiceQueue(db: Database.Database, input: { at?: string; limit?: number } = {}): QueueRow[] {
 	const limit = input.limit ?? 10;
@@ -167,14 +168,14 @@ export function practiceQueue(db: Database.Database, input: { at?: string; limit
 		};
 		const isDue = row.has_doubt === 1 || row.due_at === null || row.due_at <= at;
 		if (!isDue) {
-			// Ближайший созревающий — единственный кандидат на «пустой день».
+			// The nearest upcoming item is the only candidate for an empty day.
 			nearest ??= { ...item, early: true };
 			continue;
 		}
 		if (blocked.has(row.claim_id)) continue;
 		picked.push(item);
 		if (picked.length >= limit) return picked;
-		// Соседи по цепочке закрываются на это окно.
+		// Chain neighbours are closed for this window.
 		for (const other of claimIdsOfChain(db, row.claim_id)) blocked.add(other);
 		blocked.add(row.claim_id);
 	}
@@ -182,8 +183,8 @@ export function practiceQueue(db: Database.Database, input: { at?: string; limit
 	return picked;
 }
 
-/** Что узел держит в разных формах: припоминание стабильно, перенос мёртв — это
- *  вызубренное, и практики это должно показывать, а не прятать за средней. */
+/** What a node holds in each form: recall stable while transfer dead means learned
+ *  by heart, and practice has to show that instead of averaging it away. */
 export function repeatStatesForClaim(
 	db: Database.Database,
 	claimId: string,

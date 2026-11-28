@@ -269,8 +269,8 @@ function installClaim(db: Database.Database, step: Record<string, unknown>): voi
 		if (resolved.length > 0) addChain(db, { conclusionId: id, premiseIds: resolved });
 	}
 	addProvenance(db, { claimId: id, sessionId: step.session_id as string, stepId: step.id as string });
-	// Принятое уходит в практику: элемент припоминания на этот узел. Остальные формы
-	// создаёт учитель, когда спрашивает их, — перенос проверяется отдельно.
+	// What was accepted goes into practice: a recall item on this node. The other
+	// forms are created when the teacher asks for them — transfer is checked apart.
 	createRepeatItem(db, { claimId: id, method: "recall" });
 }
 

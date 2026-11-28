@@ -1,5 +1,6 @@
-// Практика через HTTP: очередь, оценка, честные отказы. Числа планировщика здесь не
-// проверяются — они проверяются об эталон в packages/domain/test/scheduler.test.ts.
+// Practice over HTTP: the queue, a rating, honest refusals. The scheduler's numbers
+// are not checked here — they are checked against the reference in
+// packages/domain/test/scheduler.test.ts.
 
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -57,7 +58,7 @@ async function post(base: string, path: string, payload: unknown): Promise<{ bod
 	return { body: (await response.json()) as Json, status: response.status };
 }
 
-test("принятый шаг сам встаёт в практику как элемент припоминания", async () => {
+test("an accepted step enters practice as a recall item by itself", async () => {
 	const { base, close, db } = await serve();
 	try {
 		const sessionId = createSession(db, { kind: "teach" });
@@ -72,13 +73,13 @@ test("принятый шаг сам встаёт в практику как э�
 			(queue.body.items ?? []).map((item) => [item.claimText, item.method, item.hasDoubt]),
 			[["Вектор — это набор чисел", "recall", false]],
 		);
-		assert.equal(queue.body.items?.[0]?.dueAt, null, "новый элемент ещё не имеет срока");
+		assert.equal(queue.body.items?.[0]?.dueAt, null, "a new item carries no date");
 	} finally {
 		await close();
 	}
 });
 
-test("очередь и оценка: срок уходит в элемент, попытка остаётся", async () => {
+test("queue and rating: the date moves on the item, the attempt stays", async () => {
 	const { base, close, db } = await serve();
 	try {
 		const claimId = upsertClaim(db, { text: "Цепное правило" }).id;
@@ -110,7 +111,7 @@ test("очередь и оценка: срок уходит в элемент, �
 	}
 });
 
-test("плохой запрос называется, а не молча игнорируется", async () => {
+test("a bad request is named, not ignored", async () => {
 	const { base, close, db } = await serve();
 	try {
 		const claimId = upsertClaim(db, { text: "Ряд Тейлора" }).id;

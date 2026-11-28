@@ -1,6 +1,6 @@
-// Очередь практики: порядок, вариативность форм, соседи по цепочке и пустой день.
-// Числа планировщика проверяются в packages/domain/test/scheduler.test.ts, здесь —
-// что хранилище хранит именно их и не теряет попытку.
+// The practice queue: order, forms, chain neighbours and the empty day. The
+// scheduler's numbers are checked in packages/domain/test/scheduler.test.ts; here it
+// is about storage keeping exactly those numbers and not losing an attempt.
 
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -25,7 +25,7 @@ function openedDb(): ReturnType<typeof openDb> {
 	return db;
 }
 
-test("форма повторения — отдельный элемент, и он не дублируется", () => {
+test("a repetition form is its own item and is never duplicated", () => {
 	const db = openedDb();
 	const claimId = upsertClaim(db, { text: "Производная есть скорость изменения" }).id;
 
@@ -38,7 +38,7 @@ test("форма повторения — отдельный элемент, и 
 	assert.throws(() => createRepeatItem(db, { claimId: "нет-такого", method: "recall" }), /узла нет-такого нет в графе/);
 });
 
-test("повтор пишет попытку и состояние планировщика одним делом", () => {
+test("a review writes the attempt and the scheduler state as one unit", () => {
 	const db = openedDb();
 	const claimId = upsertClaim(db, { text: "Предел отношения приращений" }).id;
 	const item = createRepeatItem(db, { claimId, method: "recall" });
@@ -67,7 +67,7 @@ test("повтор пишет попытку и состояние планир�
 	assert.throws(() => reviewRepeatItem(db, "нет-такого", { rating: "good" }), /элемента практики нет-такого нет/);
 });
 
-test("очередь идёт от сомнения к созревшему, новые — после созревших", () => {
+test("the queue runs from doubt to what is due, new items after that", () => {
 	const db = openedDb();
 	const doubt = upsertClaim(db, { text: "Дифференциал — это приращение" }).id;
 	const late = upsertClaim(db, { text: "Цепное правило" }).id;
@@ -80,12 +80,12 @@ test("очередь идёт от сомнения к созревшему, н�
 
 	const lateItem = createRepeatItem(db, { claimId: late, method: "reasoning" });
 	reviewRepeatItem(db, lateItem, { at: "2026-01-01T09:00:00.000Z", rating: "easy" });
-	// Просрочим намеренно: элемент создан давно и срок уже прошёл.
+	// Overdue on purpose: the item is old and its date has passed.
 	db.prepare("UPDATE repeat_item SET due_at = '2026-01-05T09:00:00.000Z' WHERE id = ?").run(lateItem);
 	createRepeatItem(db, { claimId: fresh, method: "recall" });
 	const futureItem = createRepeatItem(db, { claimId: future, method: "transfer" });
 	reviewRepeatItem(db, futureItem, { at: "2026-01-01T09:00:00.000Z", rating: "easy" });
-	// Заведем срок далеко вперёд: смысл проверки в том, что этот элемент ещё не созрел.
+	// Push the date far ahead: the point is this item has not come due yet.
 	db.prepare("UPDATE repeat_item SET due_at = '2026-06-01T09:00:00.000Z' WHERE id = ?").run(futureItem);
 
 	const queue = practiceQueue(db, { at: "2026-01-10T09:00:00.000Z" });
@@ -94,10 +94,10 @@ test("очередь идёт от сомнения к созревшему, н�
 		["Цепное правило", false, false],
 		["Теорема Ролля", false, false],
 	]);
-	assert.equal(queue[2]!.dueAt, null, "новый элемент идёт без срока");
+	assert.equal(queue[2]!.dueAt, null, "a new item carries no date");
 });
 
-test("узлы одной цепочки в одно окно не попадают, другой ветки — попадают", () => {
+test("nodes of one chain never share a window, another branch does", () => {
 	const db = openedDb();
 	const premise = upsertClaim(db, { text: "Приращение — разница значений" }).id;
 	const conclusion = upsertClaim(db, { text: "Отношение приращений даёт скорость" }).id;
@@ -105,7 +105,7 @@ test("узлы одной цепочки в одно окно не попада�
 	addChain(db, { conclusionId: conclusion, premiseIds: [premise] });
 
 	const at = "2026-01-10T09:00:00.000Z";
-	// Оба созрели и оба без срока: порядок задаёт очередь, а не срок.
+	// Both came due: the queue decides the order, not a missing date.
 	const a = createRepeatItem(db, { claimId: premise, method: "recall" });
 	const b = createRepeatItem(db, { claimId: conclusion, method: "recall" });
 	db.prepare("UPDATE repeat_item SET due_at = '2026-01-09T09:00:00.000Z' WHERE id IN (?, ?)").run(a, b);
@@ -117,7 +117,7 @@ test("узлы одной цепочки в одно окно не попада�
 	assert.equal(queue.some((item) => item.claimText.includes("Отношение приращений")), false);
 });
 
-test("когда не созрело ничего, очередь не становится пустым днём", () => {
+test("when nothing is due the queue is still not an empty day", () => {
 	const db = openedDb();
 	const claimId = upsertClaim(db, { text: "Сумма рядов" }).id;
 	const item = createRepeatItem(db, { claimId, method: "recall" });
@@ -130,7 +130,7 @@ test("когда не созрело ничего, очередь не стан�
 	assert.throws(() => practiceQueue(db, { limit: 0 }), /limit — целое от 1 до 100/);
 });
 
-test("формы держатся раздельно: припоминание мертво, перенос не проверялся", () => {
+test("forms stay apart: recall decays, transfer was never probed", () => {
 	const db = openedDb();
 	const claimId = upsertClaim(db, { text: "Интеграл — накопление" }).id;
 	const recall = createRepeatItem(db, { claimId, method: "recall" });
@@ -139,8 +139,8 @@ test("формы держатся раздельно: припоминание �
 
 	const states = repeatStatesForClaim(db, claimId, "2026-01-01T09:00:00.000Z");
 	assert.deepEqual(states.map((state) => state.method), ["recall", "transfer"]);
-	assert.equal(states[0]!.retrievability, 1, "сразу после повтора вспоминание полное");
-	assert.equal(states[1]!.retrievability, null, "перенос не проверялся — и в отчёте его нет");
+	assert.equal(states[0]!.retrievability, 1, "right after a review recall is complete");
+	assert.equal(states[1]!.retrievability, null, "transfer was never probed, so the report has nothing");
 	const later = repeatStatesForClaim(db, claimId, "2026-03-01T09:00:00.000Z");
-	assert.ok((later[0]!.retrievability ?? 1) < 0.9, "через два месяца вспоминание упало ниже целевой доли");
+	assert.ok((later[0]!.retrievability ?? 1) < 0.9, "two months later recall is below the target rate");
 });

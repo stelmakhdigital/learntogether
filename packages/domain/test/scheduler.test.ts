@@ -1,6 +1,6 @@
-// Эталон планировщика: значения сняты с ts-fsrs 6.0.1 (packages/domain/tools/
-// genFsrsFixtures.ts). Совпадение полное — своя реализация не имеет права тихо
-// разъезжаться с эталоном: интервалы уходят в расписание ученика.
+// The scheduler's reference: values taken from ts-fsrs 6.0.1 (see
+// scripts/genFsrsFixtures.ts). The match is exact — our own implementation has no
+// right to drift from the reference silently: its output is the learner's schedule.
 
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -30,19 +30,19 @@ type Fixture = {
 const fixture = JSON.parse(readFileSync(fileURLToPath(new URL("./fixtures/fsrs6.json", import.meta.url)), "utf8")) as Fixture;
 const RATING_BY_VALUE: Record<number, Rating> = { 1: "again", 2: "hard", 3: "good", 4: "easy" };
 
-test("веса те же, что у эталона", () => {
+test("the weights are the reference weights", () => {
 	assert.equal(FSRS6_WEIGHTS.length, 21);
 	assert.deepEqual([...FSRS6_WEIGHTS], fixture.weights);
 });
 
-test("первый повтор каждого типа совпадает с эталоном", () => {
+test("the first review of each rating matches the reference", () => {
 	for (const [value, expected] of Object.entries(fixture.first)) {
 		const rating = RATING_BY_VALUE[Number(value)]!;
 		assert.deepEqual(nextMemoryState(NEW_MEMORY, 0, rating), expected, `первый повтор ${rating}`);
 	}
 });
 
-test("последовательность повторов совпадает с эталоном шаг в шаг", () => {
+test("a sequence of reviews matches the reference step by step", () => {
 	let memory = NEW_MEMORY;
 	for (const [index, step] of fixture.steps.entries()) {
 		memory = nextMemoryState(memory, step.elapsed, RATING_BY_VALUE[step.rating]!);
@@ -50,20 +50,20 @@ test("последовательность повторов совпадает �
 	}
 });
 
-test("кривая забывания и интервалы совпадают с эталоном", () => {
+test("the forgetting curve and the intervals match the reference", () => {
 	for (const row of fixture.curves) {
 		assert.equal(retrievability(row.elapsed, row.stability), row.r, `R(${row.elapsed}, ${row.stability})`);
 	}
 	for (const row of fixture.intervals) {
 		for (const [retention, expected] of Object.entries(row.retention)) {
-			assert.equal(nextIntervalDays(row.stability, Number(retention)), expected, `интервал S=${row.stability} R=${retention}`);
+			assert.equal(nextIntervalDays(row.stability, Number(retention)), expected, `interval S=${row.stability} R=${retention}`);
 		}
 	}
-	// Целевая доля вспоминания по умолчанию та, на которой снят эталон.
+	// The default target recall rate is the one the fixture was taken at.
 	assert.equal(DEFAULT_RETENTION, 0.9);
 });
 
-test("провал возвращается в этой же сессии, успех — по интервалу", () => {
+test("a lapse comes back in the same session, a success goes by interval", () => {
 	const start = newRepeatCard();
 	const again = reviewRepeat(start, "again", "2026-01-01T09:00:00.000Z");
 	assert.equal(again.card.state, "learning");
@@ -78,27 +78,27 @@ test("провал возвращается в этой же сессии, ус�
 	assert.equal(good.card.dueAt, new Date(Date.parse("2026-01-01T09:00:00.000Z") + good.intervalDays! * 86_400_000).toISOString());
 });
 
-test("интервал растёт с оценкой и падает после провала", () => {
+test("the interval grows with the rating and drops after a lapse", () => {
 	const base = reviewRepeat(newRepeatCard(), "good", "2026-01-01T09:00:00.000Z").card;
 	const later = "2026-02-01T09:00:00.000Z";
 	const intervals = (["hard", "good", "easy"] as Rating[]).map((rating) => reviewRepeat(base, rating, later).intervalDays!);
 	assert.deepEqual(intervals, [...intervals].sort((x, y) => x - y));
-	assert.ok(intervals[0]! < intervals[2]!, `жёсткий ${intervals[0]} должен быть короче лёгкого ${intervals[2]}`);
+	assert.ok(intervals[0]! < intervals[2]!, `hard ${intervals[0]} must be shorter than easy ${intervals[2]}`);
 
 	const failed = reviewRepeat(base, "again", later).card;
 	const recovered = reviewRepeat(failed, "good", later).intervalDays!;
-	assert.ok(recovered < intervals[0]!, `после провала интервал ${recovered} должен остаться коротким`);
+	assert.ok(recovered < intervals[0]!, `after a lapse the interval ${recovered} must stay short`);
 });
 
-test("повтор в тот же день не уменьшает устойчивость при успехе", () => {
+test("a same-day review does not shrink stability on a success", () => {
 	const first = reviewRepeat(newRepeatCard(), "good", "2026-01-01T09:00:00.000Z").card;
 	const sameDay = reviewRepeat(first, "hard", "2026-01-01T18:00:00.000Z").card;
-	assert.ok(sameDay.memory.stability >= first.memory.stability, "тот же день не может обнулить сегодняшнее");
+	assert.ok(sameDay.memory.stability >= first.memory.stability, "the same day cannot cancel today");
 	assert.equal(elapsedDays("2026-01-01T23:00:00.000Z", "2026-01-02T01:00:00.000Z"), 1);
 	assert.equal(elapsedDays("2026-01-01T09:00:00.000Z", "2026-01-01T23:30:00.000Z"), 0);
 });
 
-test("неполное состояние памяти и повтор из прошлого отказывают честно", () => {
+test("an incomplete memory state and a review from the past are refused by name", () => {
 	assert.throws(() => nextMemoryState({ difficulty: 5, stability: 0 }, 3, "good"), /неполное состояние памяти/);
 	assert.throws(() => nextMemoryState(NEW_MEMORY, -1, "good"), /elapsedDays не может быть отрицательным/);
 	assert.throws(() => nextIntervalDays(5, 0), /desired retention вне/);
