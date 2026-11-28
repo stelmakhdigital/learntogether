@@ -128,6 +128,13 @@ const library = (await page.locator("main").innerText()).replace(/\s+/g, " ");
 // correct answer. What must not happen is a screen stuck on nothing.
 check("библиотека ответила числом узлов или честной пустотой", /узлов в графе: \d+|пока нет узлов/.test(library), library.slice(0, 80));
 
+await page.getByRole("button", { name: "Карта" }).click();
+await page.waitForTimeout(900);
+const map = (await page.locator("main").innerText()).replace(/\s+/g, " ");
+// The canvas itself is unreadable from the outside; what is checkable is that the
+// screen named its window instead of sitting there with nothing.
+check("карта назвала окно узлов", /в окне \d+ из \d+/.test(map), map.slice(0, 80));
+
 await page.screenshot({ path: shot, fullPage: true });
 console.log(`скриншот: ${shot}`);
 

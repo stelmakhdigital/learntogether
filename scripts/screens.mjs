@@ -54,6 +54,13 @@ if (queueShown) {
 	check("кнопка ведёт в сессию практики", /Практика\.|Учитель даст задачу/.test(practice), practice.slice(0, 60).replace(/\n/g, " "));
 }
 
+const map = await screen("Карта");
+check(
+	"карта говорит, сколько узлов в окне",
+	/в окне \d+ из \d+/.test(map) || /Карты нет/.test(map),
+	map.replace(/\s+/g, " ").slice(-70),
+);
+
 const settings = await screen("Настройки");
 check("заглушка настроек держит состояния", /EMPTY/.test(settings) && /LONG-CONTENT/.test(settings));
 
