@@ -19,6 +19,7 @@ import {
 	setSessionGoal,
 	upsertProbe,
 	activeSummary,
+	createRepeatItem,
 	upsertClaim,
 } from "@learntogether/data";
 import { createFakeTransport } from "@learntogether/models";
@@ -253,4 +254,21 @@ test("the state block sends the lesson through its phases by the tool it lacks",
 	const marked = lessonStateBlock(db, sessionId);
 	assert.match(marked, /n1 — Скорость изменения \(уже в графе\)/);
 	assert.doesNotMatch(marked, /n2 — Предел отношения \(уже в графе\)/);
+});
+
+test("a practice session is told about items and forms, not about lesson phases", () => {
+	const { db } = startedSession();
+	const practice = createSession(db, { kind: "practice" });
+	// An empty queue says so instead of sending the model to the probe.
+	assert.match(lessonStateBlock(db, practice), /Состояние практики:\n- повторять пока нечего/);
+
+	const claimId = upsertClaim(db, { text: "Цепное правило" }).id;
+	const itemId = createRepeatItem(db, { claimId, method: "transfer" });
+	const block = lessonStateBlock(db, practice);
+	assert.match(block, new RegExp(`элемент ${itemId}: «Цепное правило» \\(transfer`));
+	assert.match(block, new RegExp(`claim_id ${claimId}`));
+	assert.match(block, /следующий вызов: pose_problem/);
+	assert.match(block, /пока problem_outcome не вызван, ответ ученика не считается разобранным/);
+	// The lesson's own steps must not leak into a practice turn.
+	assert.doesNotMatch(block, /замера нет|Состояние урока/);
 });

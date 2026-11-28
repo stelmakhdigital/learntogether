@@ -64,3 +64,19 @@ test("reading a node says what holds it, what rests on it and what is doubted", 
 	assert.match(readPremise, new RegExp(`на него опираются цепки: ${chain.id}`));
 	assert.throws(() => call(db, sessionId, "graph_read", { id: "нет-такого" }), /узла нет-такого нет/);
 });
+
+test("a session gets the tools of its kind, not both families", () => {
+	const db = openDb(":memory:");
+	migrate(db, migrationsDir);
+	const teach = createSession(db, { kind: "teach" });
+	const practice = createSession(db, { kind: "practice" });
+	const teachNames = createTeachTools(db, teach).map((tool) => tool.name);
+	const practiceNames = createTeachTools(db, practice).map((tool) => tool.name);
+
+	assert.deepEqual(teachNames.filter((name) => name.startsWith("graph_")), ["graph_search", "graph_read"]);
+	assert.ok(teachNames.includes("record_step") && teachNames.includes("probe_record"));
+	assert.equal(teachNames.includes("pose_problem"), false);
+	assert.ok(practiceNames.includes("pose_problem") && practiceNames.includes("problem_outcome"));
+	assert.equal(practiceNames.includes("record_step"), false);
+	assert.throws(() => createTeachTools(db, "нет-такой-сессии"), /сессии нет-такой-сессии нет/);
+});

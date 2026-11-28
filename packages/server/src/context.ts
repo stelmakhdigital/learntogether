@@ -75,6 +75,10 @@ function listed(items: string[], limit = 8): string {
 }
 
 export function lessonStateBlock(db: Database.Database, sessionId: string): string {
+	const kind = db.prepare("SELECT kind FROM session WHERE id = ?").get(sessionId) as { kind: "practice" | "teach" } | undefined;
+	if (kind === undefined) throw new Error(`сессии ${sessionId} нет`);
+	if (kind.kind === "practice") return practiceStateBlock(db);
+
 	const lines: string[] = ["Состояние урока:"];
 	const goal = goalForSession(db, sessionId);
 	const plan = activePlan(db, sessionId);
@@ -164,6 +168,32 @@ export function lessonStateBlock(db: Database.Database, sessionId: string): stri
 	if (held.length > 0) {
 		lines.push(`- ученик уже держит: ${held.map((probe) => probe.statement).join("; ")}`);
 	}
+	lines.push("- это твоя служебная сводка, не показывай её ученику как раздел урока");
+	return lines.join("\n");
+}
+
+/** Practice speaks of items and forms, not of probe/goal/plan: those phases belong
+ *  to a lesson, and asking them of a practice turn is how a teacher ends up
+ *  interviewing the learner about a topic that is already queued (live check
+ *  2026-11-28). Claim ids are spelled out — pose_problem takes one, and the model
+ *  cannot invent it (it invents ids, see graph_read). */
+function practiceStateBlock(db: Database.Database): string {
+	const queue = practiceQueue(db, { limit: 5 });
+	const lines = ["Состояние практики:"];
+	if (queue.length === 0) {
+		lines.push("- повторять пока нечего: очередь пуста, предложи разобрать что-то новое уроком");
+	}
+	for (const item of queue) {
+		const marks = [item.method, item.hasDoubt ? "сомнение" : null, item.early ? "ещё не созрело, но больше ничего нет" : null]
+			.filter((mark): mark is string => mark !== null)
+			.join(", ");
+		lines.push(`- элемент ${item.itemId}: «${item.claimText}» (${marks}); claim_id ${item.claimId}`);
+	}
+	lines.push("- следующий вызов: pose_problem с claim_id из очереди; условие без названия темы");
+	lines.push("- после ответа ученика: problem_outcome с вердиктом, оценкой и местом, где рассуждение свернуло не туда");
+	// A live lesson 2026-11-28: the teacher discussed the answer and never called the
+	// outcome tool, so the attempt and the schedule stayed unwritten.
+	lines.push("- пока problem_outcome не вызван, ответ ученика не считается разобранным: сначала вызов, потом слова");
 	lines.push("- это твоя служебная сводка, не показывай её ученику как раздел урока");
 	return lines.join("\n");
 }
