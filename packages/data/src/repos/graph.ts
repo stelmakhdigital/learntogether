@@ -150,7 +150,7 @@ export function findClaimByText(db: Database.Database, text: string): string | u
 
 export function readClaim(db: Database.Database, id: string): ClaimReading {
 	const row = db.prepare("SELECT * FROM claim WHERE id = ?").get(id) as Record<string, unknown> | undefined;
-	if (row === undefined) throw new Error(`узла ${id} нет`);
+	if (row === undefined) throw new Error(`узла ${id} нет; идентификатор берётся из graph_search`);
 	const asConclusion = db.prepare("SELECT id FROM chain WHERE conclusion_claim_id = ?").all(id) as { id: string }[];
 	const asPremise = db.prepare("SELECT chain_id AS id FROM chain_premise WHERE claim_id = ?").all(id) as { id: string }[];
 	return {
@@ -258,7 +258,7 @@ export function addProvenance(
  * to know that list, and the test runs `foreign_key_check` after it.
  */
 export function deleteClaim(db: Database.Database, id: string): void {
-	if (!db.prepare("SELECT 1 FROM claim WHERE id = ?").get(id)) throw new Error(`узла ${id} нет`);
+	if (!db.prepare("SELECT 1 FROM claim WHERE id = ?").get(id)) throw new Error(`узла ${id} нет; идентификатор берётся из graph_search`);
 	const asConclusion = (db.prepare("SELECT id FROM chain WHERE conclusion_claim_id = ?").all(id) as { id: string }[]).map(
 		(chain) => chain.id,
 	);

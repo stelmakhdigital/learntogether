@@ -85,8 +85,9 @@ test("answer must point at an existing option", () => {
 	assert.deepEqual(byIndex.repairs, []);
 	const byLabel = ok(repairArgs(schema, { options: [{ label: "а" }, { label: "б" }], answer: "б" }));
 	assert.deepEqual(byLabel.repairs, []);
+	// The refusal names the labels: a wrong answer is sent back, not rewritten.
 	assert.deepEqual(repairArgs(schema, { options: [{ label: "а" }], answer: 3 }), {
-		error: "answer does not reference an existing option: 3",
+		error: 'answer does not reference an existing option: 3; allowed labels: ["а"]',
 	});
 });
 

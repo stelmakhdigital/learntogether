@@ -6,9 +6,12 @@
 import type Database from "better-sqlite3";
 import { TOOL_SCHEMAS, type ToolPort } from "@learntogether/agent";
 import {
+	activePlan,
 	appendEntry,
 	CHECK_KINDS,
 	createStep,
+	goalForSession,
+	probesForSession,
 	presentStep,
 	recordCheck,
 	STEP_KINDS,
@@ -126,12 +129,24 @@ function readAnswer(value: unknown): StepAnswer {
 
 /** Tools that move a step of the current session. The session id is closed over
  *  so a call can never write into another learner's lesson. */
+/** The phases of the method are enforced, not requested (D-057, same reasoning as
+ *  D-058): a step recorded before the probe, the goal or the plan is refused in the
+ *  turn it was attempted, and the refusal names the call that comes next. A live
+ *  lesson on 2026-11-28 showed why — the model went straight to record_step and the
+ *  lesson lost its measurement. */
+function requirePhasesDone(db: Database.Database, sessionId: string): void {
+	if (probesForSession(db, sessionId).length === 0) throw new Error("шага раньше замера: следующий вызов — probe_record");
+	if (goalForSession(db, sessionId) === null) throw new Error("шага раньше цели: следующий вызов — goal_state");
+	if (activePlan(db, sessionId) === null) throw new Error("шага раньше плана: следующий вызов — plan_set");
+}
+
 export function createStepTools(db: Database.Database, sessionId: string): ToolPort[] {
 	const recordStep: ToolPort = {
 		name: "record_step",
 		description: TOOL_SCHEMAS.record_step!.description,
 		schema: TOOL_SCHEMAS.record_step!.parameters,
 		run(args: Record<string, unknown>): string {
+			requirePhasesDone(db, sessionId);
 			const rawKind = requireString(args, "kind");
 			const kind = STEP_KINDS.find((candidate) => candidate === rawKind);
 			if (kind === undefined) {

@@ -49,7 +49,8 @@ export const RAW_TOOL_SCHEMAS: readonly RawTool[] = [
 								type: "integer",
 								minimum: 1,
 								maximum: 5,
-								description: "Уверенность ученика до показа результата.",
+								description:
+									"Уверенность ученика до показа результата, целое 1..5. Поле обязательное: без него замера нет.",
 							},
 							basis_ref: { type: "string", minLength: 1, description: "Опора: узел графа или источник." },
 						},

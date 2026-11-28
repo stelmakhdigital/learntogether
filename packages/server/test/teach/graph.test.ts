@@ -37,6 +37,8 @@ test("search answers with ids to read, and an empty graph says what it does not 
 
 	const found = call(db, sessionId, "graph_search", { query: "скорость изменения" });
 	assert.match(found, /Производная есть скорость/);
+	// The next call comes with a real id, so the model does not invent one.
+	assert.match(found, /следующий вызов: graph_read \{"id":"[0-9a-f-]{36}"\}/);
 	assert.ok(call(db, sessionId, "graph_search", { query: "теорема пифагора" }).includes("ничего не найдено"));
 	// A word the learner actually used is enough to be found.
 	assert.match(call(db, sessionId, "graph_search", { query: "производная" }), /Производная/);

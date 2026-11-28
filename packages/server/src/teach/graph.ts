@@ -26,8 +26,15 @@ export function createGraphTools(db: Database.Database, _sessionId: string): Too
 			// An empty graph is not «the learner knows nothing»: it says the search
 			// found no wording, which is a different fact and asks for a different next
 			// move (probe the learner).
-			if (hits.length === 0) return "в графе ничего не найдено — это не значит, что ученик не знает, спроси его";
-			return hits.map((hit) => `${hit.id}: ${hit.text}`).join("\n");
+			// A live lesson showed the model inventing ids for graph_read after an empty
+			// search, which costs a refused call.
+			if (hits.length === 0)
+				return "в графе ничего не найдено — это не значит, что ученик не знает, спроси его; id для graph_read берутся только из ответов этого поиска";
+			// The next call is spelled out with a real id: after a bare list of ids the
+			// model invented its own (live lesson 2026-11-28: graph_read "производная_скорость").
+			const lines = hits.map((hit) => `${hit.id}: ${hit.text}`);
+			lines.push(`следующий вызов: graph_read {"id":"${hits[0]!.id}"}`);
+			return lines.join("\n");
 		},
 	};
 

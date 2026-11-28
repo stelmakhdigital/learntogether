@@ -204,7 +204,10 @@ function checkSemantics(schema: CanonicalSchema, value: Record<string, unknown>)
 		const answers = Array.isArray(answer) ? answer : [answer];
 		const labels = optionLabels(options);
 		if (!answers.every((item) => references(item, options.length, labels))) {
-			return `answer does not reference an existing option: ${show(answer)}`;
+			// The labels are spelled out: `answer` is a protected field and is never
+			// rewritten here, so the only way to fix the call is to name what the model
+			// has to write instead (it tends to answer with the option's wording).
+			return `answer does not reference an existing option: ${show(answer)}; allowed labels: ${show(labels)}`;
 		}
 	}
 

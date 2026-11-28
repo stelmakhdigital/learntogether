@@ -98,7 +98,13 @@ export function createLessonTools(db: Database.Database, sessionId: string): Too
 					);
 				}
 				if (!Number.isInteger(item.confidence) || item.confidence < 1 || item.confidence > 5) {
-					throw new Error(`items[${index}].confidence: нужно целое 1..5 — уверенность ученика до показа результата`);
+					// A small model drops this field on a nested object and repeats the
+					// same call (live lesson 2026-11-28, three times). The refusal answers
+					// with the shape of a whole item, not only the field it missed.
+					throw new Error(
+						`items[${index}].confidence: нужно целое 1..5, уверенность ученика до показа результата; ` +
+							`пример правильной записи: {"statement":"путь делю на время","state":"held","confidence":4}`,
+					);
 				}
 				const basis = basisEntryId(item.basis_ref, index);
 				upsertProbe(db, {

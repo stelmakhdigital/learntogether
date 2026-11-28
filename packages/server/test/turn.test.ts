@@ -4,13 +4,14 @@ import { fileURLToPath } from "node:url";
 import { ToolRegistry } from "@learntogether/agent";
 import { createFakeTransport } from "@learntogether/models";
 import type { Request, Transport, TransportEvent } from "@learntogether/models";
-import { createSession, entries, migrate, openDb } from "@learntogether/data";
+import { entries, migrate, openDb } from "@learntogether/data";
 import { createApp } from "../src/app.ts";
 import { unmetCheck } from "../src/context.ts";
 import { createStepTools } from "../src/teach/steps.ts";
 import { pendingCheck } from "../src/teach/judge.ts";
 import { DEFAULT_PORT, type Config } from "../src/config.ts";
 import { TurnRunner, budgetFor } from "../src/turn.ts";
+import { teachSession } from "./teach/phases.ts";
 
 const migrationsDir = fileURLToPath(new URL("../../data/migrations", import.meta.url));
 
@@ -77,7 +78,7 @@ function runnerFor(db: ReturnType<typeof openDb>, transport: Transport): TurnRun
 
 async function withApp(t: { after(fn: () => unknown): void }, transport: Transport | null) {
 	const db = startedDb();
-	const sessionId = createSession(db, { kind: "teach" });
+	const sessionId = teachSession(db);
 	const runner = transport === null ? undefined : runnerFor(db, transport);
 	const app = createApp({
 		...(runner === undefined ? {} : { turn: runner }),
@@ -176,7 +177,7 @@ test("an empty message is refused before anything is stored", async (t) => {
 test("cancel stops the turn and the stream closes", async () => {
 	const transport = createFakeTransport({ turns: [{ text: "а" }, { text: "б" }, { text: "в" }] });
 	const db = startedDb();
-	const sessionId = createSession(db, { kind: "teach" });
+	const sessionId = teachSession(db);
 	const runner = runnerFor(db, transport);
 	const handle = runner.start(sessionId);
 	handle.cancel();
@@ -239,7 +240,7 @@ function runTool(db: ReturnType<typeof openDb>, sessionId: string, name: string,
 
 test("a turn that showed a step without a check is sent back to the call once", async () => {
 	const db = startedDb();
-	const sessionId = createSession(db, { kind: "teach" });
+	const sessionId = teachSession(db);
 	const tools = (id: string) => new ToolRegistry(createStepTools(db, id));
 	const recorded = /шаг (\S+) под/.exec(runTool(db, sessionId, "record_step", { kind: "foundation", premises: [], statement: "шаг" }))![1]!;
 	runTool(db, sessionId, "present_step", { step_id: recorded, text: "смотри шаг" });
@@ -287,7 +288,7 @@ test("a turn that showed a step without a check is sent back to the call once", 
 
 test("a turn that opened its check is not sent back a second time", async () => {
 	const db = startedDb();
-	const sessionId = createSession(db, { kind: "teach" });
+	const sessionId = teachSession(db);
 	const tools = (id: string) => new ToolRegistry(createStepTools(db, id));
 	const recorded = /шаг (\S+) под/.exec(runTool(db, sessionId, "record_step", { kind: "foundation", premises: [], statement: "шаг" }))![1]!;
 	runTool(db, sessionId, "present_step", { step_id: recorded, text: "смотри шаг" });

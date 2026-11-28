@@ -2,11 +2,21 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import type Database from "better-sqlite3";
-import { createSession, entries, migrate, openDb, stepsForSession } from "@learntogether/data";
+import {
+	createSession,
+	entries,
+	migrate,
+	openDb,
+	setPlan,
+	setSessionGoal,
+	stepsForSession,
+	upsertProbe,
+} from "@learntogether/data";
 import { allowedRatings } from "@learntogether/domain";
 import type { ToolPort } from "@learntogether/agent";
 import { createStepTools } from "../../src/teach/steps.ts";
 import { answerCheck } from "../../src/teach/answer.ts";
+import { teachSession } from "./phases.ts";
 
 const migrationsDir = fileURLToPath(new URL("../../../data/migrations", import.meta.url));
 
@@ -70,7 +80,7 @@ function presentedWithCheck(db: Db, sessionId: string, statement: string): { ste
 
 test("record_step keeps foundations premise-free, refuses premise-less derivations, grows ordinal", () => {
 	const db = openedDb();
-	const sessionId = createSession(db, { kind: "teach" });
+	const sessionId = teachSession(db);
 
 	const first = recordStep(db, sessionId, { statement: "вода кипит при 100 °C на уровне моря", kind: "foundation" });
 	assert.equal(first.ordinal, 1);
@@ -95,7 +105,7 @@ test("record_step keeps foundations premise-free, refuses premise-less derivatio
 
 test("present_step moves planned to presented once and writes the wording into the transcript", () => {
 	const db = openedDb();
-	const sessionId = createSession(db, { kind: "teach" });
+	const sessionId = teachSession(db);
 	const { id: stepId } = recordStep(db, sessionId, { statement: "давление пара растёт с температурой", kind: "foundation" });
 
 	assert.match(call(db, sessionId, "present_step", { step_id: stepId, text: "смотри: молекулы бьют в крышку" }), /^показан шаг 1; следующий вызов — check_understanding/);
@@ -113,8 +123,8 @@ test("present_step moves planned to presented once and writes the wording into t
 
 test("a step of another session is refused by every executor", () => {
 	const db = openedDb();
-	const mine = createSession(db, { kind: "teach" });
-	const other = createSession(db, { kind: "teach" });
+	const mine = teachSession(db);
+	const other = teachSession(db);
 	const foreign = recordStep(db, other, { statement: "чужой шаг", kind: "foundation" });
 	call(db, other, "present_step", { step_id: foreign.id, text: "чужое объяснение" });
 
@@ -149,7 +159,7 @@ test("a step of another session is refused by every executor", () => {
 
 test("check_understanding needs a presented step, choice kinds need options, labels stay unique", () => {
 	const db = openedDb();
-	const sessionId = createSession(db, { kind: "teach" });
+	const sessionId = teachSession(db);
 	const { id: stepId } = recordStep(db, sessionId, { statement: "кристаллы льда растут от центра", kind: "foundation" });
 
 	assert.throws(
@@ -204,7 +214,7 @@ test("check_understanding needs a presented step, choice kinds need options, lab
 
 test("answerCheck rates by the domain ceiling and moves the step", () => {
 	const db = openedDb();
-	const sessionId = createSession(db, { kind: "teach" });
+	const sessionId = teachSession(db);
 	const { checkId } = presentedWithCheck(db, sessionId, "paroобразование идёт с поверхности");
 
 	const result = answerCheck(db, sessionId, {
@@ -222,7 +232,7 @@ test("answerCheck rates by the domain ceiling and moves the step", () => {
 
 test("answerCheck with hints stays in the allowed ratings and leaves the step on the frontier", () => {
 	const db = openedDb();
-	const sessionId = createSession(db, { kind: "teach" });
+	const sessionId = teachSession(db);
 	const { checkId } = presentedWithCheck(db, sessionId, "шаг для замера с подсказками");
 
 	const result = answerCheck(db, sessionId, {
@@ -239,7 +249,7 @@ test("answerCheck with hints stays in the allowed ratings and leaves the step on
 
 test("answerCheck with a wrong answer sends the step to repair", () => {
 	const db = openedDb();
-	const sessionId = createSession(db, { kind: "teach" });
+	const sessionId = teachSession(db);
 	const { checkId, stepId } = presentedWithCheck(db, sessionId, "шаг, который не поняли");
 
 	const result = answerCheck(db, sessionId, {
@@ -255,8 +265,8 @@ test("answerCheck with a wrong answer sends the step to repair", () => {
 
 test("answerCheck refuses a second answer, a foreign check and an unknown one", () => {
 	const db = openedDb();
-	const sessionId = createSession(db, { kind: "teach" });
-	const stranger = createSession(db, { kind: "teach" });
+	const sessionId = teachSession(db);
+	const stranger = teachSession(db);
 	const { checkId } = presentedWithCheck(db, sessionId, "шаг с однократным ответом");
 	const foreign = presentedWithCheck(db, stranger, "чужой шаг с проверкой");
 
@@ -282,7 +292,7 @@ test("answerCheck refuses a second answer, a foreign check and an unknown one", 
 
 test("update_step edits a presented step and never touches an accepted one", () => {
 	const db = openedDb();
-	const sessionId = createSession(db, { kind: "teach" });
+	const sessionId = teachSession(db);
 	const { id: stepId } = recordStep(db, sessionId, { statement: "первая формулировка", kind: "foundation" });
 	call(db, sessionId, "present_step", { step_id: stepId, text: "объяснение" });
 
@@ -319,7 +329,7 @@ test("update_step edits a presented step and never touches an accepted one", () 
 
 test("a step the learner already holds gets no new check", () => {
 	const db = openedDb();
-	const sessionId = createSession(db, { kind: "teach" });
+	const sessionId = teachSession(db);
 	const { id: stepId } = recordStep(db, sessionId, { statement: "нагрев ускоряет частицы", kind: "foundation" });
 	call(db, sessionId, "present_step", { step_id: stepId, text: "объяснение" });
 	const checkId = checkIdOf(
@@ -349,7 +359,7 @@ test("a step the learner already holds gets no new check", () => {
 
 test("a step addressed by its ordinal is taken, and the answer names the canonical id", () => {
 	const db = openedDb();
-	const sessionId = createSession(db, { kind: "teach" });
+	const sessionId = teachSession(db);
 	const { id: stepId } = recordStep(db, sessionId, { statement: "Нагрев ускоряет частицы", kind: "foundation" });
 
 	// The model sees «шаг 1» in the lesson and sends "1" (live checks 2026-11-28).
@@ -364,4 +374,22 @@ test("a step addressed by its ordinal is taken, and the answer names the canonic
 		() => call(db, sessionId, "present_step", { step_id: "7", text: "смотри" }),
 		new RegExp(`шага 7 нет; шаги этого урока: 1 → ${stepId}`),
 	);
+});
+
+test("a step before the phases is refused, and the refusal names the call that comes next", () => {
+	const db = openedDb();
+	const sessionId = createSession(db, { kind: "teach" });
+	const record = { kind: "foundation" as const, statement: "Переход держится на базе" };
+
+	assert.throws(() => call(db, sessionId, "record_step", { ...record }), /шага раньше замера: следующий вызов — probe_record/);
+	upsertProbe(db, { confidence: 3, sessionId, state: "frontier", statement: "Что стоит за переходом" });
+	assert.throws(() => call(db, sessionId, "record_step", { ...record }), /шага раньше цели: следующий вызов — goal_state/);
+	setSessionGoal(db, { raw: "разобраться", readyWhen: "сам выведет", sessionId, statements: ["вывести переход"] });
+	assert.throws(() => call(db, sessionId, "record_step", { ...record }), /шага раньше плана: следующий вызов — plan_set/);
+	setPlan(db, { nodes: [{ label: "Переход", nodeId: "n1", whyNeeded: "первая ступень" }], sessionId });
+
+	// Nothing was written by the refused calls: the lesson has no step until its phases are done.
+	assert.deepEqual(stepsForSession(db, sessionId), []);
+	call(db, sessionId, "record_step", { ...record });
+	assert.equal(stepsForSession(db, sessionId).length, 1);
 });

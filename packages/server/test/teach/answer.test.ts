@@ -5,12 +5,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
-import { createSession, entries, migrate, openDb, stepsForSession, type CheckRow } from "@learntogether/data";
+import { entries, migrate, openDb, stepsForSession, type CheckRow } from "@learntogether/data";
 import { createFakeTransport } from "@learntogether/models";
 import type { Transport } from "@learntogether/models";
 import { createStepTools } from "../../src/teach/steps.ts";
 import { createAnswerService } from "../../src/teach/answer.ts";
 import { learnerAnswerText, mechanicalVerdict, pendingCheck } from "../../src/teach/judge.ts";
+import { teachSession } from "./phases.ts";
 
 const migrationsDir = fileURLToPath(new URL("../../../data/migrations", import.meta.url));
 const budget = () => ({ input: 2000, output: 300 });
@@ -32,7 +33,7 @@ function call(db: Db, sessionId: string, name: string, args: Record<string, unkn
 /** A lesson with one step shown to the learner. */
 function startedLesson(): { db: Db; sessionId: string; stepId: string } {
 	const db = openedDb();
-	const sessionId = createSession(db, { kind: "teach" });
+	const sessionId = teachSession(db);
 	const recorded = call(db, sessionId, "record_step", { kind: "foundation", premises: [], statement: "нагрев ускоряет частицы" });
 	const stepId = /шаг (\S+) под/.exec(recorded)![1]!;
 	call(db, sessionId, "present_step", { step_id: stepId, text: "смотри: частицы бьют сильнее" });
