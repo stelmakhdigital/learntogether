@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
+import { api, probeServer } from "./api.ts";
 import { StateView } from "./states.ts";
 import type { ScreenState } from "./states.ts";
 
@@ -47,16 +48,6 @@ const ROLE_LABEL: Record<Entry["role"], string> = {
 	teacher: "Учитель",
 	system: "Система",
 };
-
-async function api<T>(path: string, init?: RequestInit): Promise<T> {
-	const response = await fetch(`/api${path}`, {
-		...init,
-		headers: { "content-type": "application/json", ...(init?.headers ?? {}) },
-	});
-	const body = (await response.json().catch(() => null)) as { error?: string } | null;
-	if (!response.ok) throw new Error(body?.error ?? `сервер ответил ${response.status}`);
-	return body as T;
-}
 
 function TranscriptEntry({ entry }: { entry: Entry }): ReactNode {
 	const long = entry.text.length > LONG_TEXT;
@@ -150,10 +141,19 @@ function CheckForm({
 	);
 }
 
-export function Chat(): ReactNode {
+export function Chat({
+	kind = "teach",
+	session = null,
+	onSession,
+}: {
+	kind?: "practice" | "teach";
+	session?: string | null;
+	/** The screen above keeps the id: switching tabs must not abandon the lesson. */
+	onSession?: (id: string) => void;
+}): ReactNode {
 	const [entries, setEntries] = useState<Entry[]>([]);
 	const [draft, setDraft] = useState("");
-	const [sessionId, setSessionId] = useState<string | null>(null);
+	const [sessionId, setSessionId] = useState<string | null>(session);
 	// null = online; a text = what the server refused or why it is unreachable.
 	const [failure, setFailure] = useState<string | null>(null);
 	const [running, setRunning] = useState(false);
@@ -173,17 +173,22 @@ export function Chat(): ReactNode {
 	}, []);
 
 	useEffect(() => {
-		api<{ ok: boolean }>("/healthz")
-			.then((health) => setFailure(health.ok ? null : "сервер ответил не то"))
-			.catch(() => setFailure("Сервер приложения не отвечает. Запустите его и нажмите «Повторить»."));
+		void probeServer().then((reason) => setFailure(reason === null ? null : reason));
 		return () => streamRef.current?.close();
 	}, []);
 
+	// A session started on another screen arrives as a prop: adopt it, refill it.
+	useEffect(() => {
+		if (session === null) return;
+		setSessionId(session);
+		void api<{ entries: Entry[] }>(`/sessions/${session}/entries`)
+			.then((transcript) => setEntries(transcript.entries))
+			.catch((error: unknown) => setFailure(error instanceof Error ? error.message : String(error)));
+	}, [session]);
+
 	const retry = useCallback(() => {
 		setFailure(null);
-		api<{ ok: boolean }>("/healthz")
-			.then((health) => setFailure(health.ok ? null : "сервер ответил не то"))
-			.catch(() => setFailure("Сервер приложения не отвечает. Запустите его и нажмите «Повторить»."));
+		void probeServer().then((reason) => setFailure(reason));
 	}, []);
 
 	/** Subscribes to the live turn. The stream is a convenience: whatever it misses,
@@ -223,12 +228,13 @@ export function Chat(): ReactNode {
 	const ensureSession = useCallback(async (): Promise<string> => {
 		if (sessionId !== null) return sessionId;
 		const created = await api<{ id: string }>("/sessions", {
-			body: JSON.stringify({ kind: "teach" }),
+			body: JSON.stringify({ kind }),
 			method: "POST",
 		});
 		setSessionId(created.id);
+		onSession?.(created.id);
 		return created.id;
-	}, [sessionId]);
+	}, [kind, onSession, sessionId]);
 
 	const submit = useCallback(
 		async (event: FormEvent) => {
@@ -282,7 +288,10 @@ export function Chat(): ReactNode {
 		message = liveText === "" ? "Учитель думает…" : liveText;
 	} else if (entries.length === 0) {
 		state = "EMPTY";
-		message = "О чём этот урок? Напишите тему или вопрос — учитель начнёт с зондирования.";
+		message =
+			kind === "practice"
+				? "Практика. Учитель даст задачу по первому элементу очереди — напиши что-нибудь, чтобы он начал."
+				: "О чём этот урок? Напишите тему или вопрос — учитель начнёт с зондирования.";
 	}
 
 	return (

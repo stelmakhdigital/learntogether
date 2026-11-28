@@ -315,6 +315,17 @@ export function searchClaimsLexical(db: Database.Database, query: string, limit 
 	return rows;
 }
 
+/** Nodes newest first, for a library screen that has to open without a query.
+ *  Offset rather than cursor: the library is browsed by a person, not synced. */
+export function listClaims(db: Database.Database, input: { limit?: number; offset?: number } = {}): ClaimRow[] {
+	const limit = input.limit ?? 50;
+	const offset = input.offset ?? 0;
+	const rows = db
+		.prepare("SELECT * FROM claim ORDER BY updated_at DESC, id LIMIT ? OFFSET ?")
+		.all(limit, offset) as Record<string, unknown>[];
+	return rows.map(rowToClaim);
+}
+
 /** Count of nodes, for the interactive-size guard the acceptance names. */
 export function countClaims(db: Database.Database): number {
 	return (db.prepare("SELECT COUNT(*) AS n FROM claim").get() as { n: number }).n;

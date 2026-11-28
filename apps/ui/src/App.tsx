@@ -6,6 +6,8 @@ import { StateView } from "./states.ts";
 import { SCREENS } from "./screens.ts";
 import type { ScreenId } from "./screens.ts";
 import { Chat } from "./Chat.tsx";
+import { Library } from "./Library.tsx";
+import { Review } from "./Review.tsx";
 
 const MESSAGES: Record<ScreenState, string> = {
 	"EMPTY": "Здесь появится первый вопрос. Начните сессию, чтобы задать тему.",
@@ -20,7 +22,15 @@ export function App(): ReactNode {
 	const [screenId, setScreenId] = useState<ScreenId>("session");
 	const [state, setState] = useState<ScreenState>("EMPTY");
 	const [attempts, setAttempts] = useState(0);
+	// The live session survives tab switches: the screens hand each other an id and
+	// the Chat below refills itself from the server rather than from memory.
+	const [session, setSession] = useState<{ id: string; kind: "practice" | "teach" } | null>(null);
 	const screen = SCREENS[screenId];
+
+	const openSession = (id: string, kind: "practice" | "teach") => {
+		setSession({ id, kind });
+		setScreenId("session");
+	};
 
 	return (
 		<main className="app">
@@ -42,7 +52,15 @@ export function App(): ReactNode {
 			</header>
 
 			{screenId === "session" ? (
-				<Chat />
+				<Chat
+					kind={session?.kind ?? "teach"}
+					session={session?.id ?? null}
+					onSession={(id) => setSession((current) => ({ id, kind: current?.kind ?? "teach" }))}
+				/>
+			) : screenId === "review" ? (
+				<Review onStart={(id) => openSession(id, "practice")} />
+			) : screenId === "library" ? (
+				<Library onOpenSession={(id) => openSession(id, "teach")} />
 			) : (
 				<section className="app__demo" aria-label="Демонстрация состояний">
 					<h2 className="app__subtitle">Состояние экрана</h2>

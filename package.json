@@ -15,11 +15,13 @@
 		"lint": "eslint .",
 		"check:layers": "node scripts/check-layers.mjs",
 		"verify": "pnpm lint && pnpm check:layers && pnpm typecheck && pnpm test",
-		"build": "pnpm -r --if-present build"
+		"build": "pnpm -r --if-present build",
+		"screens": "node scripts/screens.mjs"
 	},
 	"devDependencies": {
 		"@types/node": "24.19.2",
 		"eslint": "10.15.0",
+		"playwright": "1.65.1",
 		"ts-fsrs": "6.0.1",
 		"typescript": "5.9.3",
 		"typescript-eslint": "8.74.0"

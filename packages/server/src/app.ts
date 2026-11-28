@@ -6,12 +6,16 @@ import { timingSafeEqual } from "node:crypto";
 import Fastify, { type FastifyError, type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import {
 	appendEntry,
+	countClaims,
 	createSession,
 	entries,
 	exportAll,
 	getSession,
+	listClaims,
 	practiceQueue,
+	readClaim,
 	reviewRepeatItem,
+	searchClaimsLexical,
 	searchEntries,
 	SESSION_KINDS,
 } from "@learntogether/data";
@@ -387,6 +391,46 @@ export function createApp(deps: AppDeps): FastifyInstance {
 			}
 		},
 	);
+
+	// The graph as a library: browse the nodes, search their wording, read one node
+	// with the chains it sits in. Semantic search is not here — it waits for an
+	// embedding model, and this route promises only what it actually measures (D-065).
+	app.get<{ Querystring: { q?: string; limit?: string; offset?: string } }>("/graph", (request, reply) => {
+		const limit = parseUnsigned(request.query.limit, "limit", LIMIT_MAX);
+		if (!limit.ok) return reply.code(400).send({ error: limit.error });
+		const offset = parseUnsigned(request.query.offset, "offset", 1_000_000);
+		if (!offset.ok) return reply.code(400).send({ error: offset.error });
+		const page = {
+			...(limit.value === null ? {} : { limit: limit.value }),
+			...(offset.value === null ? {} : { offset: offset.value }),
+		};
+		const query = (request.query.q ?? "").trim();
+		try {
+			// An empty query is a browse, not a search: a person opens the library
+			// to see what is in it, and «введите запрос» is not an answer to that.
+			const hits = query === "" ? [] : searchClaimsLexical(db, query, page.limit ?? 50);
+			return {
+				total: countClaims(db),
+				query,
+				hits,
+				claims: query === "" ? listClaims(db, page) : [],
+			};
+		} catch (error) {
+			// Words are quoted before they reach FTS5, so a broken expression cannot
+			// come from here; anything that still throws is reported as it came.
+			const reason = error instanceof Error ? error.message : String(error);
+			return reply.code(400).send({ error: `поиск не удался: ${reason}` });
+		}
+	});
+
+	app.get<{ Params: { id: string } }>("/graph/:id", (request, reply) => {
+		try {
+			return readClaim(db, request.params.id);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			return reply.code(/ нет;/.test(message) ? 404 : 400).send({ error: message });
+		}
+	});
 
 	app.post("/export", () => {
 		const written = exportAll(db, config.exportDir, new Date().toISOString());
