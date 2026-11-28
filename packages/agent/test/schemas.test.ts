@@ -7,6 +7,8 @@ const TOOL_NAMES = [
 	"check_understanding",
 	"doubt_add",
 	"goal_state",
+	"graph_read",
+	"graph_search",
 	"plan_set",
 	"present_step",
 	"probe_record",
@@ -47,6 +49,8 @@ const VALID_ARGS: Record<ToolName, Record<string, unknown>> = {
 		raw: null,
 	},
 	present_step: { step_id: "s1", text: "Сложи 3 и 4, а потом 4 и 3 — результат один и тот же." },
+	graph_read: { id: "claim-1" },
+	graph_search: { query: "производная скорость" },
 	check_understanding: {
 		step_id: "s1",
 		kind: "single_choice",

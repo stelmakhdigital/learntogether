@@ -19,6 +19,7 @@ import {
 	setSessionGoal,
 	upsertProbe,
 	activeSummary,
+	upsertClaim,
 } from "@learntogether/data";
 import { createFakeTransport } from "@learntogether/models";
 import type { Request, TokenCounter, Transport } from "@learntogether/models";
@@ -236,8 +237,20 @@ test("the state block sends the lesson through its phases by the tool it lacks",
 	assert.match(withGoal, /цель: вывести перестановку; готовность: сам выведет/);
 	assert.match(withGoal, /цель есть: следующий вызов plan_set/);
 
-	setPlan(db, { nodes: [{ label: "Скорость изменения", nodeId: "n1", whyNeeded: "первая ступень" }], sessionId });
+	setPlan(db, {
+		nodes: [
+			{ label: "Скорость изменения", nodeId: "n1", whyNeeded: "первая ступень" },
+			{ label: "Предел отношения", nodeId: "n2", whyNeeded: "вторая ступень" },
+		],
+		sessionId,
+	});
 	const withPlan = lessonStateBlock(db, sessionId);
 	assert.match(withPlan, /план: n1 — Скорость изменения/);
 	assert.doesNotMatch(withPlan, /следующий вызов plan_set/);
+	// A node the graph already holds is marked as held: pruning the plan from
+	// evidence is the point of having a graph at all.
+	upsertClaim(db, { text: "скорость изменения" });
+	const marked = lessonStateBlock(db, sessionId);
+	assert.match(marked, /n1 — Скорость изменения \(уже в графе\)/);
+	assert.doesNotMatch(marked, /n2 — Предел отношения \(уже в графе\)/);
 });

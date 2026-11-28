@@ -17,6 +17,7 @@ import type Database from "better-sqlite3";
 import {
 	activeSummary,
 	activePlan,
+	findClaimByText,
 	goalForSession,
 	checksForStep,
 	foldTranscript,
@@ -94,7 +95,9 @@ export function lessonStateBlock(db: Database.Database, sessionId: string): stri
 	if (plan !== null) {
 		const todo = plan.nodes.filter((node) => node.state === "todo");
 		const pruned = plan.nodes.filter((node) => node.state === "pruned_held");
-		lines.push(`- план: ${listed(todo.map((node) => `${node.nodeId} — ${node.label}`))}`);
+		// A node the graph already holds is pruned, not taught again: the mark lets the
+		// teacher prune from evidence instead of by impression.
+		lines.push(`- план: ${listed(todo.map((node) => `${node.nodeId} — ${node.label}${findClaimByText(db, node.label) ? " (уже в графе)" : ""}`))}`);
 		if (pruned.length > 0) {
 			lines.push(`- из плана убрано как держимое: ${listed(pruned.map((node) => node.label))}`);
 		}

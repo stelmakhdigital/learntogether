@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { addChain, addProvenance, foldWording, upsertClaim } from "./graph.ts";
+import { addChain, addProvenance, findClaimByText, upsertClaim } from "./graph.ts";
 import type Database from "better-sqlite3";
 import {
 	allowedRatings,
@@ -262,13 +262,9 @@ function installClaim(db: Database.Database, step: Record<string, unknown>): voi
 				const byStatement = db
 					.prepare("SELECT statement FROM step WHERE id = ? AND session_id = ?")
 					.get(premise, step.session_id) as { statement: string } | undefined;
-				const wording = byStatement?.statement ?? premise;
-				return db.prepare("SELECT id FROM claim WHERE norm = ?").get(foldWording(wording)) as
-					| { id: string }
-					| undefined;
+				return findClaimByText(db, byStatement?.statement ?? premise);
 			})
-			.filter((found): found is { id: string } => found !== undefined)
-			.map((found) => found.id);
+			.filter((found): found is string => found !== undefined);
 		if (resolved.length > 0) addChain(db, { conclusionId: id, premiseIds: resolved });
 	}
 	addProvenance(db, { claimId: id, sessionId: step.session_id as string, stepId: step.id as string });

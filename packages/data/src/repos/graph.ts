@@ -141,6 +141,13 @@ function addAlias(db: Database.Database, claimId: string, text: string): void {
 	db.prepare("INSERT OR IGNORE INTO claim_alias (claim_id, text, norm) VALUES (?, ?, ?)").run(claimId, text, foldWording(text));
 }
 
+/** The node holding this wording, whatever the wording's case, spacing or trailing
+ *  punctuation. Used before teaching something to ask whether the graph has it. */
+export function findClaimByText(db: Database.Database, text: string): string | undefined {
+	const row = db.prepare("SELECT id FROM claim WHERE norm = ?").get(foldWording(text)) as { id: string } | undefined;
+	return row?.id;
+}
+
 export function readClaim(db: Database.Database, id: string): ClaimReading {
 	const row = db.prepare("SELECT * FROM claim WHERE id = ?").get(id) as Record<string, unknown> | undefined;
 	if (row === undefined) throw new Error(`узла ${id} нет`);

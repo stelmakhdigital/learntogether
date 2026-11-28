@@ -220,6 +220,33 @@ export const RAW_TOOL_SCHEMAS: readonly RawTool[] = [
 			},
 		},
 	},
+	{
+		name: "graph_search",
+		description:
+			"Найти в графе знаний узлы по словам. Прежде чем объяснять то, что ученик уже держал, спроси здесь: найденный узел не объясняется заново, в нём ищутся дыры.",
+		parameters: {
+			type: "object",
+			additionalProperties: false,
+			required: ["query"],
+			properties: {
+				query: { type: "string", minLength: 1, description: "Слова запроса, например «производная скорость»." },
+				k: { type: "integer", minimum: 1, maximum: 20, description: "Сколько узлов вернуть. По умолчанию 8." },
+			},
+		},
+	},
+	{
+		name: "graph_read",
+		description:
+			"Прочитать узел графа целиком: чем он держится, что на него опирается, откуда взят и что в нём под сомнением. План строится по этому чтению, а не по впечатлению.",
+		parameters: {
+			type: "object",
+			additionalProperties: false,
+			required: ["id"],
+			properties: {
+				id: { ...idField, description: "Идентификатор узла из graph_search." },
+			},
+		},
+	},
 ];
 
 function canonicalizeAll(raws: readonly RawTool[]): Record<string, CanonicalTool> {
