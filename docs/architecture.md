@@ -101,7 +101,7 @@ meta                     версия схемы, watermark компакции, 
 goal, session, transcript_entry, tool_call
 plan, plan_node, step, check, probe_item
 claim, claim_alias, chain, chain_premise, provenance
-doubt, repeat_item, attempt
+doubt, repeat_item, attempt, side_thread, side_message
 source, source_chunk, coverage
 endpoint, model_info, role_assignment
 job, event

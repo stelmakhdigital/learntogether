@@ -27,6 +27,13 @@ type Verdict = { reason: string; verdict: string };
  *  the previous turn end. */
 type TurnStatus = { running: boolean; stop: string | null; turnId: string | null };
 
+/** A side thread: the learner's own question and the helper's short answer (D-078). */
+type SideThread = {
+	createdAt: string;
+	id: string;
+	messages: { ordinal: number; role: "helper" | "learner"; text: string }[];
+};
+
 type LiveEvent =
 	| { type: "text"; text: string }
 	| { type: "thinking"; text: string }
@@ -177,6 +184,10 @@ export function Chat({
 	const [liveText, setLiveText] = useState("");
 	const [notice, setNotice] = useState<string | null>(null);
 	const [check, setCheck] = useState<OpenCheck | null>(null);
+	const [side, setSide] = useState<SideThread[]>([]);
+	const [sideQuestion, setSideQuestion] = useState("");
+	const [sideBusy, setSideBusy] = useState(false);
+	const [sideFailure, setSideFailure] = useState<string | null>(null);
 	const [verdict, setVerdict] = useState<Verdict | null>(null);
 	const streamRef = useRef<EventSource | null>(null);
 
@@ -251,6 +262,9 @@ export function Chat({
 		async (id: string) => {
 			const transcript = await api<{ entries: Entry[] }>(`/sessions/${id}/entries`);
 			setEntries(transcript.entries);
+			void api<{ threads: SideThread[] }>(`/sessions/${id}/side`)
+				.then((answered) => setSide(answered.threads))
+				.catch(() => setSide([]));
 			const turn = await api<TurnStatus>(`/sessions/${id}/turn`);
 			if (turn.running) watchTurn(id);
 			else await refresh(id);
@@ -264,6 +278,37 @@ export function Chat({
 		setSessionId(session);
 		void resume(session).catch((error: unknown) => setFailure(error instanceof Error ? error.message : String(error)));
 	}, [resume, session]);
+
+	/** A side question goes to its own route and never through the lesson composer:
+	 *  it must not answer a check, must not start a turn and must not be lost if the
+	 *  teacher is writing at the same moment. */
+	const askSide = useCallback(
+		async (event: FormEvent) => {
+			event.preventDefault();
+			const id = sessionId;
+			const question = sideQuestion.trim();
+			if (id === null || question === "" || sideBusy) return;
+			setSideBusy(true);
+			setSideFailure(null);
+			try {
+				const last = side.at(-1);
+				await api<{ answer: string; threadId: string }>(`/sessions/${id}/side`, {
+					body: JSON.stringify({ question, ...(last === undefined ? {} : { threadId: last.id }) }),
+					method: "POST",
+				});
+				setSideQuestion("");
+				// The answer is read back from the server rather than pasted in: the
+				// thread is the record, and the window should show the record.
+				const threads = await api<{ threads: SideThread[] }>(`/sessions/${id}/side`);
+				setSide(threads.threads);
+			} catch (error) {
+				setSideFailure(error instanceof Error ? error.message : String(error));
+			} finally {
+				setSideBusy(false);
+			}
+		},
+		[side, sideBusy, sideQuestion, sessionId],
+	);
 
 	const ensureSession = useCallback(async (): Promise<string> => {
 		if (sessionId !== null) return sessionId;
@@ -355,6 +400,38 @@ export function Chat({
 			)}
 			{check !== null && state !== "ERROR" && (
 				<CheckForm check={check} disabled={running} onSubmit={answer} />
+			)}
+			{sessionId !== null && (
+				<details className="side">
+					<summary>Спросить отдельно</summary>
+					{side.length === 0 && <p className="side__empty">Вопросов пока не было. Ответ приходит коротко и не трогает урок.</p>}
+					{side.map((thread) => (
+						<ul className="side__list" key={thread.id}>
+							{thread.messages.map((message) => (
+								<li className={`side__item side__item--${message.role}`} key={message.ordinal}>
+									{message.text}
+								</li>
+							))}
+						</ul>
+					))}
+					{sideFailure !== null && (
+						<p className="side__error" role="alert">
+							{sideFailure}
+						</p>
+					)}
+					<form className="side__form" onSubmit={(event) => void askSide(event)}>
+						<input
+							aria-label="Вопрос вне урока"
+							disabled={sideBusy}
+							placeholder="Например: что такое секущая"
+							value={sideQuestion}
+							onChange={(event) => setSideQuestion(event.target.value)}
+						/>
+						<button type="submit" disabled={sideBusy || sideQuestion.trim() === ""}>
+							{sideBusy ? "Отвечает…" : "Спросить"}
+						</button>
+					</form>
+				</details>
 			)}
 			<form className="chat__form" onSubmit={(event) => void submit(event)}>
 				<input

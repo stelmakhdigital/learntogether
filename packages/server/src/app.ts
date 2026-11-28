@@ -27,6 +27,7 @@ import { RATINGS } from "@learntogether/domain";
 import type { openDb, SessionKind } from "@learntogether/data";
 import { type Config } from "./config.ts";
 import type { AnswerService } from "./teach/answer.ts";
+import type { SideService } from "./teach/side.ts";
 import type { TurnRunner } from "./turn.ts";
 
 /** The handle as data opens it, so this package does not need better-sqlite3 types. */
@@ -40,6 +41,8 @@ export interface AppDeps {
 	/** Absent until a model transport is configured: turn routes then answer 503
 	 *  instead of pretending a lesson can run. */
 	turn?: TurnRunner;
+	/** Absent for the same reason: a side question still needs a model to answer. */
+	side?: SideService;
 	/** Absent for the same reason: a verdict of a free-form check needs the model. */
 	answer?: AnswerService;
 }
@@ -324,6 +327,40 @@ export function createApp(deps: AppDeps): FastifyInstance {
 		);
 		return undefined;
 	});
+
+	// Side questions (D-078): a short exchange that does not occupy the lesson turn.
+	// A learner may ask one while the teacher is mid-turn, and the lesson's own record
+	// says the question was asked without pretending the teacher answered it.
+	app.get<{ Params: { id: string } }>("/sessions/:id/side", (request, reply) => {
+		const service = deps.side;
+		if (service === undefined) return reply.code(503).send({ error: "транспорт модели не настроен" });
+		const { id } = request.params;
+		if (!getSession(db, id)) return reply.code(404).send({ error: `сессии ${id} нет` });
+		return { threads: service.list(id) };
+	});
+
+	app.post<{ Params: { id: string }; Body: { question?: unknown; threadId?: unknown; stepId?: unknown } }>(
+		"/sessions/:id/side",
+		async (request, reply) => {
+			const service = deps.side;
+			if (service === undefined) return reply.code(503).send({ error: "транспорт модели не настроен" });
+			const { id } = request.params;
+			if (!getSession(db, id)) return reply.code(404).send({ error: `сессии ${id} нет` });
+			const body = request.body as { question?: unknown; threadId?: unknown; stepId?: unknown } | null;
+			const question = typeof body?.question === "string" ? body.question : "";
+			if (question.trim() === "") return reply.code(400).send({ error: "нужен вопрос в поле question" });
+			try {
+				return await service.ask({
+					question,
+					sessionId: id,
+					...(typeof body?.stepId === "string" ? { stepId: body.stepId } : {}),
+					...(typeof body?.threadId === "string" ? { threadId: body.threadId } : {}),
+				});
+			} catch (error) {
+				return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) });
+			}
+		},
+	);
 
 	// The check the learner is expected to answer, and the answer itself. The
 	// verdict of a choice is computed by us; a free-form one is compared with the

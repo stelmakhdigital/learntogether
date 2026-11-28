@@ -16,6 +16,7 @@ import {
 import type { ModelSettings } from "./config.ts";
 import { fitRequest, unmetCheck } from "./context.ts";
 import { createAnswerService, type AnswerService } from "./teach/answer.ts";
+import { createSideService, type SideService } from "./teach/side.ts";
 import { TEACHER_PROMPT } from "./teach/prompt.ts";
 import { createTeachTools } from "./teach/tools.ts";
 import { budgetFor, DEFAULT_OUTPUT_ALLOWANCE, TurnRunner } from "./turn.ts";
@@ -38,11 +39,13 @@ export interface ComposeDeps {
 	fetch?: FetchFn;
 }
 
-/** What a live endpoint yields: the runner of lesson turns and the service that
- *  accepts the learner's answers. Both need the same measured transport. */
+/** What a live endpoint yields: the runner of lesson turns, the service that accepts
+ *  the learner's answers and the side helper. All three ride the same measured
+ *  transport — a second, unprobed endpoint would be a second set of guesses. */
 export interface Composition {
 	turn: TurnRunner;
 	answer: AnswerService;
+	side: SideService;
 }
 
 /** Probes, stores, refuses. An endpoint that cannot call tools cannot teach:
@@ -148,5 +151,6 @@ export async function composeTurnRunner(deps: ComposeDeps): Promise<Composition>
 		budget: turnBudget,
 		transport,
 	});
-	return { answer, turn: runner };
+	const side = createSideService({ db, budget: turnBudget, transport });
+	return { answer, side, turn: runner };
 }

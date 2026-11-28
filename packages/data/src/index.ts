@@ -9,6 +9,7 @@ export * from "./repos/models.ts";
 export * from "./repos/plan.ts";
 export * from "./repos/probes.ts";
 export * from "./repos/sessions.ts";
+export * from "./repos/side.ts";
 export * from "./repos/steps.ts";
 export * from "./repos/compaction.ts";
 export * from "./repos/transcript.ts";

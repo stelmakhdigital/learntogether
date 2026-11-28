@@ -399,3 +399,58 @@ button:focus-visible {
 	color: inherit;
 	padding: 0.5rem 0.8rem;
 }
+
+/* The side question lives beside the lesson, and the stylesheet says so: smaller,
+   muted, and never competing with the teacher's speech for attention. */
+.side {
+	border: 1px solid rgba(255, 255, 255, 0.08);
+	border-radius: 0.6rem;
+	margin: 0 0 0.8rem;
+	padding: 0.4rem 0.7rem;
+}
+
+.side > summary {
+	color: var(--muted, #8b8b93);
+	cursor: pointer;
+	font-size: 0.85rem;
+}
+
+.side__empty {
+	color: var(--muted, #8b8b93);
+	font-size: 0.85rem;
+}
+
+.side__list {
+	list-style: none;
+	margin: 0.5rem 0;
+	padding: 0;
+}
+
+.side__item {
+	font-size: 0.9rem;
+	margin-bottom: 0.3rem;
+}
+
+.side__item--helper {
+	border-left: 2px solid rgba(255, 255, 255, 0.16);
+	color: var(--text, #e8e8ea);
+	padding-left: 0.5rem;
+}
+
+.side__item--learner {
+	color: var(--muted, #8b8b93);
+}
+
+.side__form {
+	display: flex;
+	gap: 0.4rem;
+}
+
+.side__form input {
+	flex: 1;
+}
+
+.side__error {
+	color: #d1495b;
+	font-size: 0.85rem;
+}

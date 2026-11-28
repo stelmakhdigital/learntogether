@@ -79,7 +79,7 @@ export async function start(env: NodeJS.ProcessEnv = process.env): Promise<numbe
 		db,
 		config,
 		log,
-		...(composed === undefined ? {} : { answer: composed.answer, turn: composed.turn }),
+		...(composed === undefined ? {} : { answer: composed.answer, side: composed.side, turn: composed.turn }),
 	});
 
 	const stopSignal = (signal: string) => {
