@@ -55,7 +55,8 @@
 | Инструмент | Назначение | Ключевые поля |
 | --- | --- | --- |
 | `check_understanding` | проверка шага | `step_id`, `kind` (`single_choice`, `multi_choice`, `free_recall`, `predict`, `find_error`, `transfer`), `question`, `options[]`, `answer`, `why`, `ask_confidence` |
-| `ask_learner` | открытый вопрос без эталона: замер, уточнение цели, реакция на шаг | `kind` (`probe`, `clarify_goal`, `reflection`), `question`, `expected` (`one_line`, `paragraph`, `list`) |
+Открытый вопрос (`ask_learner` в раннем контракте) инструментом не стал: у него нет
+эталона и вердикта, а ответ приходит обычным сообщением ученика (D-062).
 
 Фаза замера:
 
