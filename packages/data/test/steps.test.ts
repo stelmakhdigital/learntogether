@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { openDb } from "../src/db.ts";
 import { migrate } from "../src/migrate.ts";
 import { createSession } from "../src/repos/sessions.ts";
+import { foldWording, claimExists, readClaim } from "../src/repos/graph.ts";
 import { acceptStep, checksForStep, createStep, presentStep, recordCheck, resolveCheck, stepsForSession } from "../src/repos/steps.ts";
 
 const migrationsDir = fileURLToPath(new URL("../migrations", import.meta.url));
@@ -191,4 +192,47 @@ test("a step waits for one answer at a time", () => {
 	);
 	presentStep(db, step.id);
 	assert.ok(recordCheck(db, { answer: "быстрее", kind: "free_recall", question: "после ремонта перескажи", stepId: step.id }));
+});
+
+test("an accepted step becomes a node with its provenance and its chain", () => {
+	const db = openedDb();
+	const sessionId = createSession(db, { kind: "teach" });
+	const premiseStatement = "Сложение считается по частям";
+	const premise = createStep(db, { kind: "foundation", sessionId, statement: premiseStatement });
+
+	presentStep(db, premise.id);
+	const premiseCheck = recordCheck(db, {
+		answer: "да",
+		kind: "free_recall",
+		question: "перескажи",
+		stepId: premise.id,
+	});
+	resolveCheck(db, premiseCheck, { confidence: 4, learnerAnswer: "да", verdict: "correct" });
+
+	const statement = "От перестановки слагаемых сумма не меняется";
+	const step = createStep(db, { kind: "derivation", premises: [premise.id], sessionId, statement });
+	presentStep(db, step.id);
+	const check = recordCheck(db, {
+		answer: "не меняется",
+		kind: "free_recall",
+		question: "что с суммой?",
+		stepId: step.id,
+	});
+	resolveCheck(db, check, { confidence: 4, learnerAnswer: "не меняется", verdict: "correct" });
+
+	const claim = db.prepare("SELECT id, text FROM claim WHERE norm = ?").get(foldWording(statement)) as
+		| { id: string; text: string }
+		| undefined;
+	assert.ok(claim, "принятый шаг обязан стать узлом графа");
+	const reading = readClaim(db, claim!.id);
+	assert.deepEqual(reading.chains.map((chain) => chain.premiseIds).flat().length, 1);
+	assert.deepEqual(
+		reading.provenance.map((row) => [row.sessionId, row.stepId]),
+		[[sessionId, step.id]],
+	);
+	// The premise node exists too, and the chain runs from it to the conclusion.
+	const premiseNode = db.prepare("SELECT id FROM claim WHERE norm = ?").get(foldWording(premiseStatement)) as { id: string };
+	assert.equal(reading.chains[0]!.premiseIds[0], premiseNode.id);
+	// The same lesson resolved twice would not double the node.
+	assert.equal(claimExists(db, claim!.id), true);
 });

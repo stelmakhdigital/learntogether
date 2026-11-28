@@ -17,7 +17,14 @@ function openedDb(): ReturnType<typeof openDb> {
 function insertClaim(db: ReturnType<typeof openDb>, text: string): string {
 	const id = randomUUID();
 	const now = new Date().toISOString();
-	db.prepare("INSERT INTO claim (id, text, created_at, updated_at) VALUES (?, ?, ?, ?)").run(id, text, now, now);
+	// norm is part of the row: dedup of wording is folded outside SQL (migration 004).
+	db.prepare("INSERT INTO claim (id, text, norm, created_at, updated_at) VALUES (?, ?, ?, ?, ?)").run(
+		id,
+		text,
+		text.toLowerCase(),
+		now,
+		now,
+	);
 	return id;
 }
 

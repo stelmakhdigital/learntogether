@@ -35,12 +35,13 @@ function filledFile(): string {
 	});
 	resolveCheck(db, checkId, { confidence: 4, learnerAnswer: "набор чисел", verdict: "correct" });
 	appendEntry(db, { kind: "text", role: "teacher", sessionId, text: "вектор — это стрелка с длиной" });
-	db.prepare(
-		"INSERT INTO claim (id, text, area, tags_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-	).run("c1", "Вектор — набор чисел", "математика", "[]", "2026-01-01T00:00:00.000Z", "2026-01-01T00:00:00.000Z");
+	// The accepted step already put its wording into the graph; the repeat item is
+	// attached to that node, the way the app would attach one later.
+	const claimId = db.prepare("SELECT id FROM claim WHERE norm = ?").get("вектор — набор чисел") as { id: string };
+	db.prepare("UPDATE claim SET area = 'математика', tags_json = '[]' WHERE id = ?").run(claimId.id);
 	db.prepare(
 		"INSERT INTO repeat_item (id, claim_id, method, due_at, reps, lapses, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-	).run("r1", "c1", "recall", "2026-01-10T00:00:00.000Z", 1, 0, "2026-01-02T00:00:00.000Z");
+	).run("r1", claimId.id, "recall", "2026-01-10T00:00:00.000Z", 1, 0, "2026-01-02T00:00:00.000Z");
 	closeSession(db, sessionId);
 	db.close();
 	return file;
@@ -50,7 +51,13 @@ test("the same connection refuses to write", () => {
 	const file = filledFile();
 	const db = openReadonly(file);
 	assert.throws(() => db.prepare("UPDATE session SET state = 'failed' WHERE id IS NOT NULL").run(), /readonly/i);
-	assert.throws(() => db.prepare("INSERT INTO claim (id, text, created_at, updated_at) VALUES ('x','y','a','b')").run(), /readonly/i);
+	assert.throws(
+		() =>
+			db
+				.prepare("INSERT INTO claim (id, text, norm, created_at, updated_at) VALUES ('x','y','x-norm','a','b')")
+				.run(),
+		/readonly/i,
+	);
 	db.close();
 });
 

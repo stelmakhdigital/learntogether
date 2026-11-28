@@ -56,12 +56,28 @@ function filledDb() {
 	resolveCheck(db, checkId, { learnerAnswer: 0, verdict: "correct", confidence: 4 });
 
 	db.prepare(
-		"INSERT INTO claim (id, text, area, tags_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-	).run("c2", "Близость считается косинусом", "математика", '["векторы"]', "2026-01-02T00:00:00.000Z", "2026-01-02T00:00:00.000Z");
+		"INSERT INTO claim (id, text, norm, area, tags_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+	).run(
+		"c2",
+		"Близость считается косинусом",
+		"близость считается косинусом",
+		"математика",
+		'["векторы"]',
+		"2026-01-02T00:00:00.000Z",
+		"2026-01-02T00:00:00.000Z",
+	);
 	db.prepare(
-		"INSERT INTO claim (id, text, area, tags_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-	).run("c1", "Вектор — набор чисел", "математика", "[]", "2026-01-01T00:00:00.000Z", "2026-01-01T00:00:00.000Z");
-	db.prepare("INSERT INTO claim_alias (claim_id, text) VALUES (?, ?)").run("c1", "вектор это список");
+		"INSERT INTO claim (id, text, norm, area, tags_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+	).run(
+		"c1",
+		"Вектор — набор чисел",
+		"вектор — набор чисел",
+		"математика",
+		"[]",
+		"2026-01-01T00:00:00.000Z",
+		"2026-01-01T00:00:00.000Z",
+	);
+	db.prepare("INSERT INTO claim_alias (claim_id, text, norm) VALUES (?, ?, ?)").run("c1", "вектор это список", "вектор это список");
 	db.prepare("INSERT INTO chain (id, conclusion_claim_id, created_at) VALUES (?, ?, ?)").run(
 		"ch1",
 		"c2",
@@ -146,11 +162,20 @@ test("jsonl records keep keys alphabetical and one trailing newline", () => {
 			assert.deepEqual(keys, [...keys].sort(), "keys are not alphabetical");
 		}
 	}
-	const firstClaim = JSON.parse(claims.trimEnd().split("\n")[0]!) as Record<string, unknown>;
-	assert.equal(firstClaim.id, "c1");
-	assert.deepEqual(firstClaim.aliases, ["вектор это список"]);
-	assert.equal((firstClaim.doubt as unknown[]).length, 0);
-	assert.equal(claims.trimEnd().split("\n").length, 2);
+	const byId = new Map(
+		claims
+			.trimEnd()
+			.split("\n")
+			.map((line) => {
+				const record = JSON.parse(line) as Record<string, unknown>;
+				return [record.id as string, record];
+			}),
+	);
+	assert.deepEqual(byId.get("c1")?.aliases, ["вектор это список"]);
+	assert.equal((byId.get("c1")?.doubt as unknown[]).length, 0);
+	// Three nodes: two written by hand and the wording of the accepted step, which
+	// the lesson installs into the graph itself.
+	assert.equal(claims.trimEnd().split("\n").length, 3);
 	db.close();
 });
 

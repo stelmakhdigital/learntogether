@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { addChain, addProvenance, foldWording, upsertClaim } from "./graph.ts";
 import type Database from "better-sqlite3";
 import {
 	allowedRatings,
@@ -244,6 +245,35 @@ export function recordCheck(
 	return id;
 }
 
+/** What the learner holds becomes a node of the graph, with the premises of the
+ *  step as the chain that holds it and a provenance row pointing back at the step.
+ *  Growth of the graph from the lesson — not from a later import — is what lets the
+ *  next lesson prune what is already held. */
+function installClaim(db: Database.Database, step: Record<string, unknown>): void {
+	const premises = JSON.parse((step.premises_json as string) || "[]") as string[];
+	const statement = step.statement as string;
+	if (statement.trim() === "") return;
+	const { id } = upsertClaim(db, { text: statement });
+	if (premises.length > 0) {
+		// A premise names a step of this lesson or a wording already in the graph;
+		// anything unknown is left out rather than invented as a node.
+		const resolved = premises
+			.map((premise) => {
+				const byStatement = db
+					.prepare("SELECT statement FROM step WHERE id = ? AND session_id = ?")
+					.get(premise, step.session_id) as { statement: string } | undefined;
+				const wording = byStatement?.statement ?? premise;
+				return db.prepare("SELECT id FROM claim WHERE norm = ?").get(foldWording(wording)) as
+					| { id: string }
+					| undefined;
+			})
+			.filter((found): found is { id: string } => found !== undefined)
+			.map((found) => found.id);
+		if (resolved.length > 0) addChain(db, { conclusionId: id, premiseIds: resolved });
+	}
+	addProvenance(db, { claimId: id, sessionId: step.session_id as string, stepId: step.id as string });
+}
+
 export function resolveCheck(
 	db: Database.Database,
 	checkId: string,
@@ -311,6 +341,7 @@ export function resolveCheck(
 			checkId,
 		);
 		db.prepare("UPDATE step SET state = ? WHERE id = ?").run(stepState, check.step_id);
+		if (stepState === "accepted") installClaim(db, step);
 		return { stepState, probeState };
 	});
 	return run();
