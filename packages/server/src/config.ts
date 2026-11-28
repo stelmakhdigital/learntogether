@@ -37,6 +37,11 @@ export interface ModelSettings {
 	baseUrl: string;
 	model: string;
 	apiKey: string | null;
+	/** Tokens one teacher turn may spend on its answer, when the server reports no
+	 *  output cap of its own. Null means the built-in allowance. A reasoning model
+	 *  spends part of it on thinking, so the default is set by us and raised here,
+	 *  not discovered: LTH_OUTPUT_TOKENS / model.output_tokens. */
+	outputTokens: number | null;
 }
 
 export const DEFAULT_PORT = 8765;
@@ -149,7 +154,22 @@ function readModel(
 		throw new Error(`адрес модели должен начинаться с http:// или https://, получено ${baseUrl}`);
 	}
 	const apiKey = key === undefined || key === "" ? null : key;
-	return { apiKey, baseUrl: baseUrl.replace(/\/+$/, ""), model };
+	return { apiKey, baseUrl: baseUrl.replace(/\/+$/, ""), model, outputTokens: readOutputTokens(env, storedModel) };
+}
+
+/** How much of the window one answer may take on a server that reports no cap of
+ *  its own. Refused rather than ignored when unparseable: a silently dropped value
+ *  leaves the user believing they raised it (D-006). */
+function readOutputTokens(env: NodeJS.ProcessEnv, storedModel: Record<string, unknown>): number | null {
+	const text = env.LTH_OUTPUT_TOKENS ?? (storedModel.output_tokens === undefined ? undefined : String(storedModel.output_tokens));
+	if (text === undefined || text === "") return null;
+	const value = Number(text);
+	if (!Number.isInteger(value) || value < 256) {
+		throw new Error(
+			`LTH_OUTPUT_TOKENS / model.output_tokens: нужно целое число токенов не меньше 256, получено ${text}`,
+		);
+	}
+	return value;
 }
 
 /** What `bind` means for the network. Returns an error text instead of throwing

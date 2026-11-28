@@ -73,6 +73,7 @@ test("a probe without a state or a confidence is refused with the words to fix i
 
 test("goal_state records the goal, moves the session to planning and hands over to plan_set", () => {
 	const { db, sessionId } = openedDb();
+	call(db, sessionId, "probe_record", probeArgs);
 	const answer = call(db, sessionId, "goal_state", {
 		raw: "разобраться с перестановкой",
 		ready_when: "ученик сам выводит перестановку на новых числах",
@@ -91,6 +92,7 @@ test("goal_state records the goal, moves the session to planning and hands over 
 test("plan_set prunes what the learner holds and says what it dropped", () => {
 	const { db, sessionId } = openedDb();
 	call(db, sessionId, "probe_record", { items: [{ confidence: 5, statement: "Порядок слагаемых", state: "held" }] });
+	call(db, sessionId, "goal_state", { ready_when: "переставит сам", statements: ["объяснить правило"] });
 
 	const answer = call(db, sessionId, "plan_set", {
 		nodes: [
@@ -104,4 +106,33 @@ test("plan_set prunes what the learner holds and says what it dropped", () => {
 	const plan = activePlan(db, sessionId)!;
 	assert.equal(plan.nodes.length, 2);
 	assert.equal(plan.nodes[0]!.state, "pruned_held");
+});
+
+test("a phase re-recorded late points at what is still missing, not at the next phase", () => {
+	// The replay cost is real: the model trusts these answers over its memory, and a
+	// phase that names a finished phase burns the steps of the turn (2026-11-29).
+	const { db, sessionId } = openedDb();
+	call(db, sessionId, "probe_record", probeArgs);
+	call(db, sessionId, "goal_state", { ready_when: "назовёт своё правило", statements: ["объяснить правило"] });
+	call(db, sessionId, "plan_set", { nodes: [{ label: "Порядок", node_id: "n1", why_needed: "основа" }] });
+
+	assert.match(call(db, sessionId, "probe_record", probeArgs), /следующий вызов: record_step/);
+	assert.match(
+		call(db, sessionId, "goal_state", { ready_when: "назовёт своё правило", statements: ["объяснить правило"] }),
+		/следующий вызов: record_step/,
+	);
+});
+
+test("a basis_ref refusal names the numbers that are legal right now", () => {
+	const { db, sessionId } = openedDb();
+	db.prepare(
+		"INSERT INTO transcript_entry (session_id, ordinal, role, kind, text, created_at) VALUES (?, 3, 'learner', 'text', 'ответ', '2026-01-01T00:00:00.000Z')",
+	).run(sessionId);
+	assert.throws(
+		() =>
+			call(db, sessionId, "probe_record", {
+				items: [{ basis_ref: "слова ученика: «ответ»", confidence: 4, statement: "что-то", state: "held" }],
+			}),
+		/basis_ref.*от "1" до "3"/,
+	);
 });

@@ -90,7 +90,7 @@ test("problems are reported per field and sorted by field name", () => {
 		"$.premises: fewer than minItems 1",
 		"$.score: expected number or null, got string",
 		"$.statement: shorter than minLength 3",
-		"$: unknown field \"extra\"",
+		'$: unknown field "extra", здесь есть поля kind, limit, premises, score, statement',
 	]);
 	// The same input twice must give the same text: retry messages get compared.
 	assert.deepEqual(validateArgs(schema as CanonicalSchema, args), problems);

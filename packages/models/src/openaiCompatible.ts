@@ -134,7 +134,10 @@ export function wireMessages(request: Request): WireMessage[] {
 	return messages;
 }
 
-function wireBody(request: Request, model: string): string {
+/** The one body shape of this adapter. The measuring call and the real call are
+ *  built from it together: a size measured from a differently-shaped request is
+ *  not the size of the request we are about to send. */
+function bodyObject(request: Request, model: string): Record<string, unknown> {
 	const body: Record<string, unknown> = {
 		max_tokens: request.budget.output,
 		messages: wireMessages(request),
@@ -145,7 +148,23 @@ function wireBody(request: Request, model: string): string {
 	// Rule 4: no tool_choice at all. Rule "none = do not send tools".
 	if (request.tools.length > 0) body.tools = wireTools(request.tools);
 	// No temperature: the caller owns sampling and the server default is its own.
-	return JSON.stringify(body);
+	return body;
+}
+
+function wireBody(request: Request, model: string): string {
+	return JSON.stringify(bodyObject(request, model));
+}
+
+/** Same request with the output cut to one token, no stream: enough for the
+ *  server to answer with `usage.prompt_tokens` of the prompt we sent. Measured on
+ *  vLLM 2026-11-29: prompt_tokens is the same at max_tokens 1 and 64 (337 = 337)
+ *  and the call costs one prefill (0.12 s with a warm prefix cache). */
+export function measureBody(request: Request, model: string): Record<string, unknown> {
+	const body = bodyObject(request, model);
+	body["max_tokens"] = 1;
+	body["stream"] = false;
+	delete body["stream_options"];
+	return body;
 }
 
 /** A number the server did not send stays unknown, never 0 (D-006). */

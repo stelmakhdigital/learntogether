@@ -14,7 +14,7 @@ export type ModelInfoRow = {
 	maxOutputTokens: number | null;
 	supportsTools: boolean | null;
 	supportsReasoning: boolean | null;
-	tokenizerSource: "file" | "server" | "none" | null;
+	tokenizerSource: "file" | "server" | "usage" | "none" | null;
 	probedAt: string | null;
 	probeMethod: string | null;
 };
@@ -53,7 +53,7 @@ export function saveModelInfo(
 		maxOutputTokens: number | null;
 		supportsTools: boolean | null;
 		supportsReasoning: boolean | null;
-		tokenizerSource?: "file" | "server" | "none";
+		tokenizerSource?: "file" | "server" | "usage" | "none";
 		probeMethod?: string;
 	},
 ): void {

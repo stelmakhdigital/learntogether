@@ -1,11 +1,12 @@
-// Exact input-token counting (D-051): render the request the way the transport
-// renders it, then ask the server to count the rendered prompt. No approximation
+// Exact input-token counting (D-051). Two ways, both by measurement and neither
 // by characters — `chars/4` understates Russian by about a third (docs measured),
-// and an understated count is an overflow on the real server. The counter is only
-// built when the probe proved this server renders and counts (`tokenizerSource:
-// "server"`); without that proof nothing here guesses a number (D-006).
+// and an understated count is an overflow on the real server. A server that
+// renders and counts templates is asked to count the rendered prompt
+// (`tokenizerSource: "server"`); a server that does not is asked to run the very
+// request and report its prompt size (`tokenizerSource: "usage"`). Without either
+// proof nothing here guesses a number (D-006).
 
-import { wireMessages, wireTools, type FetchFn } from "./openaiCompatible.ts";
+import { measureBody, wireMessages, wireTools, type FetchFn } from "./openaiCompatible.ts";
 import type { Request } from "./types.ts";
 
 export interface TokenCounterProfile {
@@ -85,19 +86,25 @@ function countedTokens(raw: unknown, url: string): number {
  *  apply a chat template, so the prompt must be rendered first with the very
  *  tools and system text the request carries — the template renders the tool
  *  schemas into the prompt, and leaving them out understates the count. */
-export function createRenderTokenCounter(profile: TokenCounterProfile): TokenCounter {
+/** Both counters address the same kind of endpoint; a half-configured profile is
+ *  refused here rather than becoming a request to the wrong place. */
+function bagFor(profile: TokenCounterProfile): HttpBag {
 	if (profile.baseUrl === "" || profile.baseUrl === undefined) {
 		throw new Error("count: baseUrl is required and has no default (D-006)");
 	}
 	if (profile.model === "" || profile.model === undefined) {
 		throw new Error("count: model is required and has no default (D-006)");
 	}
-	const root = profile.baseUrl.replace(/\/+$/, "");
 	const headers: Record<string, string> = {};
 	if (profile.apiKey !== undefined && profile.apiKey !== "") {
 		headers.authorization = `Bearer ${profile.apiKey}`;
 	}
-	const bag: HttpBag = { headers, send: profile.fetch ?? ((url, init) => globalThis.fetch(url, init)) };
+	return { headers, send: profile.fetch ?? ((url, init) => globalThis.fetch(url, init)) };
+}
+
+export function createRenderTokenCounter(profile: TokenCounterProfile): TokenCounter {
+	const bag = bagFor(profile);
+	const root = profile.baseUrl.replace(/\/+$/, "");
 
 	return {
 		async count(request: Request): Promise<number> {
@@ -132,6 +139,29 @@ export function createRenderTokenCounter(profile: TokenCounterProfile): TokenCou
 			// `/tokenize` is not optional here: a request that rendered but cannot be
 			// counted has no honest size, and the budget refuses to be guessed.
 			return countedTokens(counted, `${root}/tokenize`);
+		},
+	};
+}
+
+/** Counts by running the request: the server reports the size of the prompt it
+ *  actually received. This is the only exact count for a server that will not
+ *  render a template for us (vLLM answers 404 on /apply-template, live 2026-11-29),
+ *  and it is a measurement of the real body — tool schemas and system text
+ *  included — not of a hand-rendered approximation of it. */
+export function createUsageTokenCounter(profile: TokenCounterProfile): TokenCounter {
+	const bag = bagFor(profile);
+	const root = profile.baseUrl.replace(/\/+$/, "");
+	return {
+		async count(request: Request): Promise<number> {
+			const url = `${root}/v1/chat/completions`;
+			const raw = record(await postJson(bag, url, measureBody(request, profile.model), false));
+			const prompt = record(raw["usage"])["prompt_tokens"];
+			if (typeof prompt !== "number" || !Number.isFinite(prompt)) {
+				throw new Error(
+					`count: ${url} answered without usage.prompt_tokens, this request has no measured size: ${excerpt(JSON.stringify(raw))}`,
+				);
+			}
+			return prompt;
 		},
 	};
 }

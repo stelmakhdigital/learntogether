@@ -24,9 +24,16 @@ const PROPS = {
 interface FixtureOptions {
 	toolCalls?: boolean;
 	nCtx?: number | null;
+	// vLLM reports the window at the top level of the model entry instead.
+	maxModelLen?: number;
+	// A reasoning model can spend the probe's whole output allowance thinking.
+	truncatedUntil?: number | null;
 	promptTokens?: number;
+	// Prompt size as reported by the measuring call (max_tokens 1).
+	promptTokensAtOne?: number;
 	tokenizeCount?: number;
 	hasApplyTemplate?: boolean;
+	hasProps?: boolean;
 }
 
 function fixture(options: FixtureOptions = {}): { calls: string[]; fetch: FetchFn } {
@@ -34,6 +41,8 @@ function fixture(options: FixtureOptions = {}): { calls: string[]; fetch: FetchF
 	const tokenizeCount = options.tokenizeCount ?? promptTokens;
 	const toolCalls = options.toolCalls ?? true;
 	const hasApplyTemplate = options.hasApplyTemplate ?? true;
+	const hasProps = options.hasProps ?? true;
+	const promptTokensAtOne = options.promptTokensAtOne ?? promptTokens;
 	const calls: string[] = [];
 
 	const json = (body: unknown, status = 200): Response =>
@@ -42,23 +51,32 @@ function fixture(options: FixtureOptions = {}): { calls: string[]; fetch: FetchF
 	const fetch: FetchFn = async (url, init) => {
 		const path = new URL(url).pathname;
 		calls.push(`${init?.method ?? "GET"} ${path}`);
-		if (path === "/props") return json(PROPS);
+		if (path === "/props") return hasProps ? json(PROPS) : new Response("not found", { status: 404 });
 		if (path === "/v1/models") {
 			const meta = options.nCtx === null ? {} : { n_ctx: options.nCtx ?? 6144, n_ctx_train: 32768 };
-			return json({ data: [{ id: MODEL, meta }], type: "list" });
+			const entry: Record<string, unknown> = { id: MODEL, meta };
+			if (options.maxModelLen !== undefined) entry.max_model_len = options.maxModelLen;
+			return json({ data: [entry], type: "list" });
 		}
 		if (path === "/v1/chat/completions") {
+			const sent = JSON.parse(String(init?.body)) as { max_tokens?: number };
+			const asking = sent.max_tokens === 1 ? promptTokensAtOne : promptTokens;
+			// Below the retry allowance the model is still thinking: no call yet.
+			const called = toolCalls && (options.truncatedUntil === undefined || options.truncatedUntil === null
+				? true
+				: (sent.max_tokens ?? 0) >= options.truncatedUntil);
+			const truncated = !called && options.truncatedUntil !== undefined && options.truncatedUntil !== null;
 			return json({
 				choices: [
 					{
-						finish_reason: toolCalls ? "tool_calls" : "stop",
+						finish_reason: called ? "tool_calls" : truncated ? "length" : "stop",
 						index: 0,
-						message: toolCalls
+						message: called
 							? { content: "", role: "assistant", tool_calls: [{ function: { arguments: '{"ping":"ok"}', name: "probe_ping" }, id: "c1", type: "function" }] }
 							: { content: "готово", role: "assistant" },
 					},
 				],
-				usage: { completion_tokens: 8, prompt_tokens: promptTokens, total_tokens: promptTokens + 8 },
+				usage: { completion_tokens: 8, prompt_tokens: asking, total_tokens: asking + 8 },
 			});
 		}
 		if (path === "/apply-template") {
@@ -82,7 +100,7 @@ test("a full probe reads context, tools, reasoning and the tokenizer", async () 
 		contextTokens: 6144,
 		maxOutputTokens: null,
 		modelId: MODEL,
-		probeMethod: "props:chat_template_caps+v1/models:meta+tool-round-trip+apply-template+tokenize==usage",
+		probeMethod: "props:chat_template_caps+v1/models:meta+tool-round-trip(512)+apply-template+tokenize==usage",
 		supportsReasoning: false,
 		supportsTools: true,
 		tokenizerSource: "server",
@@ -112,10 +130,45 @@ test("tokenize disagreeing with usage.prompt_tokens fails loudly, never guesses"
 	);
 });
 
-test("an absent /apply-template leaves the tokenizer unproven but the probe alive", async () => {
-	const probe = await probeEndpoint(profile(fixture({ hasApplyTemplate: false }).fetch));
-	assert.equal(probe.tokenizerSource, "none");
-	assert.match(probe.probeMethod, /tokenize-endpoint-absent/);
+test("without /apply-template the prompt size is read from usage, once it agrees", async () => {
+	const { fetch } = fixture({ hasApplyTemplate: false });
+	const probe = await probeEndpoint(profile(fetch));
+	assert.equal(probe.tokenizerSource, "usage");
+	assert.match(probe.probeMethod, /usage-count==prompt_tokens/);
+});
+
+test("a server reporting two prompt sizes for one request is refused, not averaged", async () => {
+	const { fetch } = fixture({ hasApplyTemplate: false, promptTokensAtOne: 209 });
+	await assert.rejects(
+		() => probeEndpoint(profile(fetch)),
+		/counted 209 at max_tokens 1 and 208 in the round trip/,
+	);
+});
+
+test("a vLLM-shaped server gives its window at the top level and no /props", async () => {
+	const { fetch } = fixture({ hasApplyTemplate: false, hasProps: false, maxModelLen: 262144, nCtx: null });
+	const probe = await probeEndpoint(profile(fetch));
+	assert.equal(probe.contextTokens, 262144);
+	assert.equal(probe.maxOutputTokens, null);
+	assert.equal(probe.supportsReasoning, null);
+	assert.equal(probe.tokenizerSource, "usage");
+	assert.match(probe.probeMethod, /v1\/models:max_model_len/);
+});
+
+test("a tool call behind the thinking is found on the retry, not called a refusal", async () => {
+	const { calls, fetch } = fixture({ truncatedUntil: 2048 });
+	const probe = await probeEndpoint(profile(fetch));
+	assert.equal(probe.supportsTools, true);
+	assert.match(probe.probeMethod, /tool-round-trip\(512\)\+truncated\+tool-round-trip\(2048\)/);
+	assert.equal(calls.filter((call) => call.includes("chat/completions")).length, 2);
+});
+
+test("a model that never reaches a call within the allowance is an error, not a false", async () => {
+	const { fetch } = fixture({ truncatedUntil: 99999 });
+	await assert.rejects(
+		() => probeEndpoint(profile(fetch)),
+		/spent 2048 output tokens of the probe without producing a tool call/,
+	);
 });
 
 test("an unreachable server is named, not defaulted", async () => {

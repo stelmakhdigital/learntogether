@@ -24,7 +24,7 @@ import {
 } from "@learntogether/data";
 import { createFakeTransport } from "@learntogether/models";
 import type { Request, TokenCounter, Transport } from "@learntogether/models";
-import { fitRequest, lessonStateBlock } from "../src/context.ts";
+import { fitRequest, lessonStateBlock, unmetCheck } from "../src/context.ts";
 
 const migrationsDir = fileURLToPath(new URL("../../data/migrations", import.meta.url));
 
@@ -271,4 +271,22 @@ test("a practice session is told about items and forms, not about lesson phases"
 	assert.match(block, /пока problem_outcome не вызван, ответ ученика не считается разобранным/);
 	// The lesson's own steps must not leak into a practice turn.
 	assert.doesNotMatch(block, /замера нет|Состояние урока/);
+});
+
+test("a lesson where the learner answered and nothing was recorded is nudged to probe_record", () => {
+	const { db, sessionId } = startedSession();
+	appendEntry(db, { kind: "text", role: "learner", sessionId, text: "объясни производную" });
+	assert.equal(unmetCheck(db, sessionId), null); // one message: nothing probed yet
+
+	appendEntry(db, { kind: "text", role: "learner", sessionId, text: "предел помню смутно" });
+	assert.match(unmetCheck(db, sessionId) ?? "", /вызови probe_record/);
+
+	upsertProbe(db, { confidence: 3, sessionId, statement: "держит скорость изменения", state: "held" });
+	assert.equal(unmetCheck(db, sessionId), null);
+
+	// A practice session has no phases to be behind on.
+	const practice = createSession(db, { kind: "practice" });
+	appendEntry(db, { kind: "text", role: "learner", sessionId: practice, text: "дай задачу" });
+	appendEntry(db, { kind: "text", role: "learner", sessionId: practice, text: "не знаю" });
+	assert.equal(unmetCheck(db, practice), null);
 });

@@ -21,21 +21,27 @@ function startedDb() {
 }
 
 function settings(): ModelSettings {
-	return { apiKey: null, baseUrl: "http://127.0.0.1:8123", model: MODEL };
+	return { apiKey: null, baseUrl: "http://127.0.0.1:8123", model: MODEL, outputTokens: null };
 }
 
-function fixture(options: { toolCalls?: boolean; nCtx?: number | null; noTemplate?: boolean } = {}): FetchFn {
+function fixture(
+	options: { maxModelLen?: number; noTemplate?: boolean; noUsage?: boolean; nCtx?: number | null; toolCalls?: boolean } = {},
+): FetchFn {
 	const toolCalls = options.toolCalls ?? true;
+	const noProps = options.maxModelLen !== undefined;
 	const json = (body: unknown): Response =>
 		new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
 	return async (url, _init) => {
 		const path = new URL(url).pathname;
 		if (path === "/props") {
+			if (noProps) return new Response("not found", { status: 404 });
 			return json({ chat_template_caps: { supports_tool_calls: true }, default_generation_settings: { n_predict: -1 } });
 		}
 		if (path === "/v1/models") {
-			const meta = options.nCtx === null ? {} : { n_ctx: 6144 };
-			return json({ data: [{ id: MODEL, meta }], type: "list" });
+			const meta = options.nCtx === null || noProps ? {} : { n_ctx: 6144 };
+			const entry: Record<string, unknown> = { id: MODEL, meta };
+			if (options.maxModelLen !== undefined) entry.max_model_len = options.maxModelLen;
+			return json({ data: [entry], type: "list" });
 		}
 		if (path === "/v1/chat/completions") {
 			return json({
@@ -48,7 +54,8 @@ function fixture(options: { toolCalls?: boolean; nCtx?: number | null; noTemplat
 							: { content: "нет" },
 					},
 				],
-				usage: { completion_tokens: 6, prompt_tokens: 200, total_tokens: 206 },
+				// A server that reports nothing gives nothing to count with.
+				...(options.noUsage === true ? {} : { usage: { completion_tokens: 6, prompt_tokens: 200, total_tokens: 206 } }),
 			});
 		}
 		if (path === "/apply-template") {
@@ -98,7 +105,22 @@ test("an unmeasured context window fails at startup, not mid-lesson (D-006)", as
 test("a server that cannot count tokens gets no lesson: its context would be a guess", async () => {
 	const db = startedDb();
 	await assert.rejects(
-		composeTurnRunner({ db, fetch: fixture({ noTemplate: true }), log: () => {}, model: settings() }),
+		composeTurnRunner({ db, fetch: fixture({ noTemplate: true, noUsage: true }), log: () => {}, model: settings() }),
 		/не отдаёт точный счёт токенов/,
 	);
+});
+
+test("a server without template rendering composes on its own usage numbers", async () => {
+	// vLLM shape: no /props, window at the top level, no /apply-template
+	// (live 2026-11-29). The measuring call answers with the same prompt size.
+	const db = startedDb();
+	const composed = await composeTurnRunner({
+		db,
+		fetch: fixture({ maxModelLen: 262144, noTemplate: true }),
+		log: () => {},
+		model: settings(),
+	});
+	assert.ok(composed.turn);
+	assert.equal(getModelInfo(db, DEFAULT_ENDPOINT_ID, MODEL)?.tokenizerSource, "usage");
+	assert.equal(getModelInfo(db, DEFAULT_ENDPOINT_ID, MODEL)?.contextTokens, 262144);
 });

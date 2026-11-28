@@ -3,12 +3,28 @@
 // sections 1 and 2). Steps, checks and repairs live in steps.ts.
 
 import type Database from "better-sqlite3";
-import { PROBE_STATES, setPlan, setSessionGoal, upsertProbe, type PlanNodeInput } from "@learntogether/data";
+import {
+	activePlan,
+	goalForSession,
+	PROBE_STATES,
+	probesForSession,
+	setPlan,
+	setSessionGoal,
+	upsertProbe,
+	type PlanNodeInput,
+} from "@learntogether/data";
 import type { Confidence, ProbeState } from "@learntogether/domain";
 import { TOOL_SCHEMAS, type ToolPort } from "@learntogether/agent";
 import { requireString, optionalString } from "./args.ts";
 
 type Item = { confidence: number; statement: string; state: string; basis_ref?: string };
+
+/** Highest transcript ordinal of the session: the only numbers a basis_ref can be. */
+function lastEntryOrdinal(db: Database.Database, sessionId: string): number {
+	const row = db.prepare("SELECT MAX(ordinal) AS n FROM transcript_entry WHERE session_id = ?").get(sessionId) as
+		{ n: number | null };
+	return row.n ?? 1;
+}
 
 /** A field of a nested object, with the path in the refusal: the model has to
  *  know which item of the list it has to fix. */
@@ -45,14 +61,28 @@ function readItems(value: unknown): Item[] {
 	});
 }
 
+/** The phase the lesson still lacks, in the order the method requires. The tools and
+ *  the state block answer from this one function: a tool that names a phase the lesson
+ *  already has makes the model replay finished phases until the turn runs out of steps
+ *  (live Qwen3.8 2026-11-29: probe_record answered "goal_state" after the goal and the
+ *  plan were already in, and all three phases got recorded a second time). */
+export function nextPhaseCall(db: Database.Database, sessionId: string): string {
+	if (probesForSession(db, sessionId).length === 0) return "probe_record";
+	if (goalForSession(db, sessionId) === null) return "goal_state";
+	if (activePlan(db, sessionId) === null) return "plan_set";
+	return "record_step";
+}
+
 /** shortcut: basis_ref of a probe holds a transcript entry number only; graph
  *  nodes arrive with этап 4, and there the reference gets a real target. */
-function basisEntryId(ref: string | undefined, index: number): number | undefined {
+function basisEntryId(ref: string | undefined, index: number, lastOrdinal: number): number | undefined {
 	if (ref === undefined) return undefined;
 	const id = Number(ref);
 	if (!Number.isInteger(id) || id < 1) {
 		throw new Error(
-			`items[${index}].basis_ref: пока можно указать только номер записи разговора; ссылка на узел графа появится с этапом 4, получено: ${ref}`,
+			`items[${index}].basis_ref: пока можно указать только номер записи разговора — строка от "1" до "${lastOrdinal}" ` +
+				`(например "basis_ref":"${lastOrdinal}" — это последнее сообщение ученика; ссылка на узел графа появится с этапом 4), ` +
+				`получено: ${ref}`,
 		);
 	}
 	return id;
@@ -106,7 +136,7 @@ export function createLessonTools(db: Database.Database, sessionId: string): Too
 							`пример правильной записи: {"statement":"путь делю на время","state":"held","confidence":4}`,
 					);
 				}
-				const basis = basisEntryId(item.basis_ref, index);
+				const basis = basisEntryId(item.basis_ref, index, lastEntryOrdinal(db, sessionId));
 				upsertProbe(db, {
 					...(basis === undefined ? {} : { basisEntryId: basis }),
 					confidence: item.confidence as Confidence,
@@ -119,7 +149,7 @@ export function createLessonTools(db: Database.Database, sessionId: string): Too
 			const words = Object.entries(seen)
 				.map(([state, count]) => `${count} ${state}`)
 				.join(", ");
-			return `замер записан: ${words}; следующий вызов: goal_state`;
+			return `замер записан: ${words}; следующий вызов: ${nextPhaseCall(db, sessionId)}`;
 		},
 	};
 
@@ -140,7 +170,7 @@ export function createLessonTools(db: Database.Database, sessionId: string): Too
 			// them, and a reader of the export has to see what was asked in the first place.
 			const raw = optionalString(args, "raw") ?? statements.join("; ");
 			setSessionGoal(db, { raw, readyWhen, sessionId, statements });
-			return `цель зафиксирована: ${statements.length} пунктов, критерий готовности «${readyWhen}»; следующий вызов: plan_set`;
+			return `цель зафиксирована: ${statements.length} пунктов, критерий готовности «${readyWhen}»; следующий вызов: ${nextPhaseCall(db, sessionId)}`;
 		},
 	};
 
@@ -153,7 +183,8 @@ export function createLessonTools(db: Database.Database, sessionId: string): Too
 			// Pruning is reported, not hidden: the model has to know that a held node was
 			// left out, or it will keep coming back to it.
 			const words = pruned.length === 0 ? "" : `; убрано из плана как держимое: ${pruned.join(", ")}`;
-			return `план задан${words}; следующий вызов: record_step для первого непройденного узла`;
+			const next = nextPhaseCall(db, sessionId);
+			return `план задан${words}; следующий вызов: ${next === "record_step" ? "record_step для первого непройденного узла" : next}`;
 		},
 	};
 

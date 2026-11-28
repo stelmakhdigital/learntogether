@@ -23,7 +23,7 @@ export interface ModelProbe {
 	maxOutputTokens: number | null;
 	supportsTools: boolean | null;
 	supportsReasoning: boolean | null;
-	tokenizerSource: "server" | "none";
+	tokenizerSource: "server" | "usage" | "none";
 	probeMethod: string;
 }
 
@@ -122,7 +122,15 @@ function booleanOrNull(value: unknown): boolean | null {
 interface ModelsEntry {
 	id?: string;
 	meta?: Record<string, unknown>;
+	// vLLM reports the serving window here instead of in meta.n_ctx (live 2026-11-29).
+	max_model_len?: number;
 }
+
+/** Output allowance of the tool probe. A reasoning model spends it on thinking
+ *  before the call appears: at 64 tokens Qwen3 was cut mid-thought on a server
+ *  that does support tool calls and read as tool-blind (live vLLM 2026-11-29). */
+const PROBE_OUTPUT_TOKENS = 512;
+const PROBE_OUTPUT_RETRY_TOKENS = 2048;
 
 /** The serving window and the entry id from /v1/models (b12723 exposes
  *  meta.n_ctx there; the top-level n_ctx of D-029 does not exist). */
@@ -144,15 +152,20 @@ async function toolRoundTrip(
 	bag: HttpBag,
 	url: string,
 	model: string,
-): Promise<{ called: boolean; promptTokens: number | null }> {
-	const body = JSON.stringify({
-		messages: PROBE_MESSAGES,
-		max_tokens: 64,
-		model,
-		stream: false,
-		tools: PROBE_TOOLS,
-	});
-	const raw = asRecord(await requestJson(bag, url, { body, method: "POST" }));
+	outputTokens: number,
+): Promise<{ called: boolean; promptTokens: number | null; truncated: boolean }> {
+	const raw = asRecord(
+		await requestJson(bag, url, {
+			body: JSON.stringify({
+				messages: PROBE_MESSAGES,
+				max_tokens: outputTokens,
+				model,
+				stream: false,
+				tools: PROBE_TOOLS,
+			}),
+			method: "POST",
+		}),
+	);
 	const choices = raw["choices"];
 	const first = asRecord(Array.isArray(choices) ? choices[0] : undefined);
 	const message = asRecord(first["message"]);
@@ -160,7 +173,35 @@ async function toolRoundTrip(
 	const called =
 		Array.isArray(calls) &&
 		calls.some((call) => asRecord(asRecord(asRecord(call)["function"]))["name"] === PROBE_TOOL_NAME);
-	return { called, promptTokens: numberOrNull(asRecord(raw["usage"])["prompt_tokens"]) };
+	// A cut-off answer says nothing about tool support: the call may simply have
+	// been behind the tokens the server was allowed to spend (measured 2026-11-29).
+	const truncated = first["finish_reason"] === "length" && !called;
+	return { called, promptTokens: numberOrNull(asRecord(raw["usage"])["prompt_tokens"]), truncated };
+}
+
+/** Prompt size on a server that will not render a template for us: run the same
+ *  request with one output token and read the prompt size it reports. Believed
+ *  only after it agrees with the usage of the full round trip above. */
+async function verifyUsageCount(bag: HttpBag, url: string, model: string, promptTokens: number): Promise<boolean> {
+	const raw = asRecord(
+		await requestJson(bag, url, {
+			body: JSON.stringify({
+				messages: PROBE_MESSAGES,
+				max_tokens: 1,
+				model,
+				stream: false,
+				tools: PROBE_TOOLS,
+			}),
+			method: "POST",
+		}),
+	);
+	const counted = numberOrNull(asRecord(raw["usage"])["prompt_tokens"]);
+	if (counted === promptTokens) return true;
+	throw new Error(
+		`probe: this request counted ${counted === null ? "nothing at all" : counted} at max_tokens 1 and ` +
+			`${promptTokens} in the round trip; the server disagrees with itself about prompt size, ` +
+			"the size of a turn cannot be measured here (D-006)",
+	);
 }
 
 /** Exact token count without tokenizer.json (D-051): render with
@@ -182,7 +223,6 @@ async function verifyTokenizer(
 			model,
 			tools: PROBE_TOOLS,
 		}),
-		headers: { "content-type": "application/json" },
 		method: "POST",
 	});
 	if (rendered === null) return false;
@@ -190,7 +230,6 @@ async function verifyTokenizer(
 	if (typeof prompt !== "string") return false;
 	const counted = await requestJson(bag, `${root}/tokenize`, {
 		body: JSON.stringify({ add_special: false, content: prompt, model }),
-		headers: { "content-type": "application/json" },
 		method: "POST",
 	});
 	const tokens = asRecord(counted)["tokens"];
@@ -208,7 +247,12 @@ async function verifyTokenizer(
 export async function probeEndpoint(profile: ProbeProfile): Promise<ModelProbe> {
 	const root = profile.baseUrl.replace(/\/+$/, "");
 	const send: FetchFn = profile.fetch ?? ((url, init) => globalThis.fetch(url, init));
-	const headers: Record<string, string> = {};
+	const headers: Record<string, string> = {
+		// Every request here carries a JSON body or expects one. llama.cpp accepts a
+		// POST without the header, vLLM answers 400 "Only 'application/json' is
+		// allowed" (live check 2026-11-29), so it goes on the bag, not per call.
+		"content-type": "application/json",
+	};
 	if (profile.apiKey !== undefined && profile.apiKey !== "") {
 		headers["authorization"] = `Bearer ${profile.apiKey}`;
 	}
@@ -224,7 +268,10 @@ export async function probeEndpoint(profile: ProbeProfile): Promise<ModelProbe> 
 		);
 	}
 	const modelId = entry.id ?? profile.model;
+	// llama.cpp reports the window in meta.n_ctx, vLLM at the top level as
+	// max_model_len (live 2026-11-29); whichever answered is named in probeMethod.
 	const contextTokens = numberOrNull(asRecord(entry.meta)["n_ctx"]);
+	const windowTokens = contextTokens ?? numberOrNull(entry.max_model_len);
 
 	const caps = asRecord(props["chat_template_caps"]);
 	const templateTools = booleanOrNull(caps["supports_tool_calls"]);
@@ -237,12 +284,28 @@ export async function probeEndpoint(profile: ProbeProfile): Promise<ModelProbe> 
 	const nPredict = numberOrNull(gen["n_predict"]);
 	const maxOutputTokens = nPredict !== null && nPredict > 0 ? nPredict : null;
 
-	const trip = await toolRoundTrip(bag, `${root}/v1/chat/completions`, modelId);
+	const chatUrl = `${root}/v1/chat/completions`;
+	const probeParts: string[] = [];
+	if (Object.keys(props).length > 0) probeParts.push("props:chat_template_caps");
+	probeParts.push(windowTokens === contextTokens ? "v1/models:meta" : "v1/models:max_model_len");
+
+	let trip = await toolRoundTrip(bag, chatUrl, modelId, PROBE_OUTPUT_TOKENS);
+	probeParts.push(`tool-round-trip(${PROBE_OUTPUT_TOKENS})`);
+	if (trip.truncated) {
+		probeParts.push("truncated");
+		trip = await toolRoundTrip(bag, chatUrl, modelId, PROBE_OUTPUT_RETRY_TOKENS);
+		probeParts.push(`tool-round-trip(${PROBE_OUTPUT_RETRY_TOKENS})`);
+	}
+	if (trip.truncated) {
+		throw new Error(
+			`probe: ${modelId} spent ${PROBE_OUTPUT_RETRY_TOKENS} output tokens of the probe without ` +
+				"producing a tool call; whether it can call tools at all is not measurable at this " +
+				"output limit — raise the server's output allowance or take a model that answers sooner",
+		);
+	}
 	const supportsTools = templateTools === false ? false : trip.called;
 
 	let tokenizerSource: ModelProbe["tokenizerSource"] = "none";
-	const probeParts = ["v1/models:meta", "tool-round-trip"];
-	if (Object.keys(props).length > 0) probeParts.unshift("props:chat_template_caps");
 	if (trip.promptTokens !== null) {
 		// The comparison itself is the measurement: only a matching count lets us
 		// call the server tokenizer trustworthy (D-051, measured diff 0 on b12723).
@@ -250,13 +313,16 @@ export async function probeEndpoint(profile: ProbeProfile): Promise<ModelProbe> 
 		if (exact) {
 			tokenizerSource = "server";
 			probeParts.push("apply-template+tokenize==usage");
-		} else {
-			probeParts.push("tokenize-endpoint-absent");
+		} else if (await verifyUsageCount(bag, chatUrl, modelId, trip.promptTokens)) {
+			tokenizerSource = "usage";
+			probeParts.push("usage-count==prompt_tokens");
 		}
+	} else {
+		probeParts.push("no-usage-reported");
 	}
 
 	return {
-		contextTokens,
+		contextTokens: windowTokens,
 		maxOutputTokens,
 		modelId,
 		probeMethod: probeParts.join("+"),

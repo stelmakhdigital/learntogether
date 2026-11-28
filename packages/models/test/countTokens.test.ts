@@ -5,7 +5,12 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createRenderTokenCounter, type FetchFn, type Request } from "../src/index.ts";
+import {
+	createRenderTokenCounter,
+	createUsageTokenCounter,
+	type FetchFn,
+	type Request,
+} from "../src/index.ts";
 
 const ROOT = "http://127.0.0.1:8123";
 const RENDERED = "system\nТы учитель\nuser\nчто такое производная\nassistant\n";
@@ -116,4 +121,44 @@ test("an unreachable server is reported with its own failure", async () => {
 test("a profile without a base url or a model is a configuration error", () => {
 	assert.throws(() => createRenderTokenCounter({ baseUrl: "", model: "qwen", fetch: fixture({}).fetch }), /baseUrl/);
 	assert.throws(() => createRenderTokenCounter({ baseUrl: ROOT, model: "", fetch: fixture({}).fetch }), /model/);
+});
+
+// The second counting way: a server that will not render a template answers with
+// the prompt size of the request it received (vLLM, live 2026-11-29).
+
+function usageFixture(options: { usage?: unknown } = {}): { bodies: Record<string, unknown>; fetch: FetchFn } {
+	const bodies: Record<string, unknown> = {};
+	const fetch: FetchFn = async (url, init) => {
+		const path = new URL(url).pathname;
+		bodies[path] = JSON.parse(String(init.body));
+		return new Response(
+			JSON.stringify({
+				choices: [{ finish_reason: "length", index: 0, message: { content: "", role: "assistant" } }],
+				...(options.usage === undefined ? {} : { usage: options.usage }),
+			}),
+			{ headers: { "content-type": "application/json" }, status: 200 },
+		);
+	};
+	return { bodies, fetch };
+}
+
+test("the measuring call sends the same request with one output token", async () => {
+	const { bodies, fetch } = usageFixture({ usage: { prompt_tokens: 337 } });
+	const counter = createUsageTokenCounter({ baseUrl: ROOT, fetch, model: "m" });
+	assert.equal(await counter.count(request()), 337);
+
+	const body = bodies["/v1/chat/completions"] as Record<string, unknown>;
+	assert.equal(body.max_tokens, 1);
+	assert.equal(body.stream, false);
+	assert.equal(body.stream_options, undefined);
+	// Counted size must include what the template renders: the tools and the system
+	// text ride along, or the number describes a request we would not send.
+	assert.equal((body.tools as { type: string }[])[0]?.type, "function");
+	assert.equal((body.messages as Record<string, unknown>[])[0]?.role, "system");
+});
+
+test("an answer without usage is a refusal, not an estimate", async () => {
+	const { fetch } = usageFixture({});
+	const counter = createUsageTokenCounter({ baseUrl: ROOT, fetch, model: "m" });
+	await assert.rejects(() => counter.count(request()), /answered without usage\.prompt_tokens/);
 });

@@ -175,7 +175,13 @@ function validateObject(
 	for (const key of [...Object.keys(value)].sort()) {
 		const prop = schema.properties[key];
 		if (prop === undefined) {
-			if (schema.additionalProperties === false) problems.push(`${path}: unknown field "${key}"`);
+			// The allowed fields ride in the refusal: a model that invents a field
+			// usually repeats it on the next call unless it is told what exists here
+			// (live Qwen3.8 2026-11-29: plan nodes carried "kind", which is a field of
+			// record_step). Sorted for the same reason as the problems themselves.
+			if (schema.additionalProperties === false) {
+				problems.push(`${path}: unknown field "${key}", здесь есть поля ${Object.keys(schema.properties).sort().join(", ")}`);
+			}
 			continue;
 		}
 		validateValue(`${path}.${key}`, prop, value[key], problems);

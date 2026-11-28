@@ -62,12 +62,27 @@ test("no model configured gives model: null", () => {
 
 test("a model endpoint reads from the file and the environment on top", () => {
 	const fromFile = config('{"model":{"url":"http://127.0.0.1:8080/","id":"llama/qwen"}}');
-	assert.deepEqual(fromFile.model, { apiKey: null, baseUrl: "http://127.0.0.1:8080", model: "llama/qwen" });
+	assert.deepEqual(fromFile.model, {
+		apiKey: null,
+		baseUrl: "http://127.0.0.1:8080",
+		model: "llama/qwen",
+		outputTokens: null,
+	});
 	const fromEnv = config('{"model":{"url":"http://file","id":"file-model"}}', {
 		LTH_MODEL_ID: "env-model",
 		LTH_MODEL_URL: "http://env",
 	});
-	assert.deepEqual(fromEnv.model, { apiKey: null, baseUrl: "http://env", model: "env-model" });
+	assert.deepEqual(fromEnv.model, { apiKey: null, baseUrl: "http://env", model: "env-model", outputTokens: null });
+});
+
+test("the answer allowance comes from the file or the environment, garbage is refused", () => {
+	assert.equal(config('{"model":{"url":"http://x","id":"m","output_tokens":2048}}').model?.outputTokens, 2048);
+	assert.equal(
+		config('{"model":{"url":"http://x","id":"m","output_tokens":2048}}', { LTH_OUTPUT_TOKENS: "4096" }).model?.outputTokens,
+		4096,
+	);
+	assert.throws(() => config('{"model":{"url":"http://x","id":"m"}}', { LTH_OUTPUT_TOKENS: "много" }), /не меньше 256/);
+	assert.throws(() => config('{"model":{"url":"http://x","id":"m"}}', { LTH_OUTPUT_TOKENS: "64" }), /не меньше 256/);
 });
 
 test("a half-configured model names both missing keys instead of guessing", () => {

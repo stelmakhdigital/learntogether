@@ -27,6 +27,7 @@ import {
 } from "@learntogether/data";
 import type { TokenCounter } from "@learntogether/models";
 import type { Budget, Message, Request, Transport } from "@learntogether/models";
+import { nextPhaseCall } from "./teach/lesson.ts";
 
 /** Verbatim exchanges that stay as messages after a fold. The lesson state block is
  *  never folded away: it is what keeps the next turn on the same step.
@@ -84,13 +85,15 @@ export function lessonStateBlock(db: Database.Database, sessionId: string): stri
 	const plan = activePlan(db, sessionId);
 	const probes = probesForSession(db, sessionId);
 
-	// Phase by what the lesson actually has. A model that skipped a phase is sent
-	// back to it by name instead of being left to guess why its calls get refused.
-	if (probes.length === 0) {
+	// Phase by what the lesson actually has, from the same function the tools answer
+	// with. A model that skipped a phase is sent back to it by name instead of being
+	// left to guess why its calls get refused.
+	const nextPhase = nextPhaseCall(db, sessionId);
+	if (nextPhase === "probe_record") {
 		lines.push("- замера нет: спроси ученика и запиши результат probe_record, шагов пока не пиши");
-	} else if (goal === null) {
+	} else if (nextPhase === "goal_state") {
 		lines.push("- замер есть: следующий вызов goal_state — пункты цели и критерий готовности");
-	} else if (plan === null) {
+	} else if (nextPhase === "plan_set") {
 		lines.push("- цель есть: следующий вызов plan_set — дерево узлов, каждому с зачем");
 	}
 
@@ -198,10 +201,25 @@ function practiceStateBlock(db: Database.Database): string {
 	return lines.join("\n");
 }
 
-/** The next call the lesson is owed. A shown step without a check is the one
- *  invariant of the method a model can skip silently, so it is stated as a fact
- *  the runner can act on, not as a wish in the prompt. */
+/** The next call the lesson is owed: a shown step without a check, or a finished
+ *  probe that was never written down. Both are invariants a model can skip silently,
+ *  so they are stated as facts the runner can act on, not as wishes in the prompt. */
 export function unmetCheck(db: Database.Database, sessionId: string): string | null {
+	const kind = db.prepare("SELECT kind FROM session WHERE id = ?").get(sessionId) as { kind: string } | undefined;
+	if (kind?.kind !== "teach") return null;
+	// A learner who answered the probing questions and got only talk: the probe never
+	// reached probe_record, so the lesson has no starting point (live Qwen3.8
+	// 2026-11-29: two turns of questions and graph searches, no record at all).
+	if (probesForSession(db, sessionId).length === 0) {
+		const answers = db
+			.prepare(
+				"SELECT COUNT(*) AS n FROM transcript_entry WHERE session_id = ? AND role = 'learner' AND kind = 'text'",
+			)
+			.get(sessionId) as { n: number };
+		if (answers.n >= 2) {
+			return "Ученик ответил на вопросы замера, а замера в уроке нет. Метод требует его зафиксировать: вызови probe_record сейчас, до новых вопросов и до объяснения.";
+		}
+	}
 	const row = db
 		.prepare(
 			`SELECT s.id, s.ordinal FROM step s

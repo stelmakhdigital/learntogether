@@ -56,7 +56,11 @@ export interface TurnInput {
 	maxRejects?: number;
 }
 
-const DEFAULT_MAX_STEPS = 8;
+/** Model calls in one turn. A lesson turn spends them before the learner sees a
+ *  word: two graph searches, the phases of the lesson, the step, its showing and its
+ *  check. 8 was measured too small — a live turn ran out right after present_step
+ *  and left the step without a check (Qwen3.8 at vLLM, 2026-11-29). */
+const DEFAULT_MAX_STEPS = 12;
 const DEFAULT_MAX_REJECTS = 2;
 
 export async function runTurn(input: TurnInput): Promise<TurnResult> {

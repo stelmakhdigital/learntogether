@@ -9,6 +9,7 @@ import { saveEndpoint, saveModelInfo } from "@learntogether/data";
 import {
 	createOpenAICompatibleTransport,
 	createRenderTokenCounter,
+	createUsageTokenCounter,
 	probeEndpoint,
 	type FetchFn,
 } from "@learntogether/models";
@@ -17,7 +18,7 @@ import { fitRequest, unmetCheck } from "./context.ts";
 import { createAnswerService, type AnswerService } from "./teach/answer.ts";
 import { TEACHER_PROMPT } from "./teach/prompt.ts";
 import { createTeachTools } from "./teach/tools.ts";
-import { budgetFor, TurnRunner } from "./turn.ts";
+import { budgetFor, DEFAULT_OUTPUT_ALLOWANCE, TurnRunner } from "./turn.ts";
 
 /** Single configured endpoint for now. shortcut: N profiles and role_assignment
  *  are the rest of stage 2; rename when the second profile exists. */
@@ -81,22 +82,34 @@ export async function composeTurnRunner(deps: ComposeDeps): Promise<Composition>
 	}
 	// Fail here, not on the first turn: an unmeasured window means no honest
 	// budget exists (D-006), and the user learns it at startup, not mid-lesson.
-	budgetFor(db, DEFAULT_ENDPOINT_ID, probe.modelId, INPUT_RESERVE_TOKENS);
+	const budget = turnBudget();
+	log(`бюджет хода: вход ${budget.input}, вывод ${budget.output} (окно ${probe.contextTokens})`);
 
 	// The context of a turn is measured, not estimated, so a server that gave no
 	// exact token count cannot carry a lesson: its prompt size would be a guess.
-	if (probe.tokenizerSource !== "server") {
+	// Two measurements are accepted: the server counts a rendered prompt (llama.cpp),
+	// or it reports the size of the request it ran (vLLM, no /apply-template there).
+	if (probe.tokenizerSource !== "server" && probe.tokenizerSource !== "usage") {
 		throw new Error(
 			`сервер ${model.baseUrl} не отдаёт точный счёт токенов (проба: ${probe.probeMethod}); ` +
-				"для llama.cpp нужны /apply-template и /tokenize — без них размер хода не измерить (D-006, D-051)",
+				"для llama.cpp нужны /apply-template и /tokenize, для vLLM — usage.prompt_tokens " +
+				"одного и того же запроса; без них размер хода не измерить (D-006, D-051)",
 		);
 	}
-	const counter = createRenderTokenCounter({
+	function turnBudget() {
+		return budgetFor(db, DEFAULT_ENDPOINT_ID, probe.modelId, INPUT_RESERVE_TOKENS, model.outputTokens ?? DEFAULT_OUTPUT_ALLOWANCE);
+	}
+
+	const counterProfile = {
 		baseUrl: model.baseUrl,
 		model: probe.modelId,
 		...(model.apiKey === null ? {} : { apiKey: model.apiKey }),
 		...(deps.fetch === undefined ? {} : { fetch: deps.fetch }),
-	});
+	};
+	const counter =
+		probe.tokenizerSource === "usage"
+			? createUsageTokenCounter(counterProfile)
+			: createRenderTokenCounter(counterProfile);
 
 	const transport = createOpenAICompatibleTransport({
 		baseUrl: `${model.baseUrl}/v1`,
@@ -119,7 +132,7 @@ export async function composeTurnRunner(deps: ComposeDeps): Promise<Composition>
 				system: TEACHER_PROMPT,
 				transport,
 				request: {
-					budget: budgetFor(db, DEFAULT_ENDPOINT_ID, probe.modelId, INPUT_RESERVE_TOKENS),
+					budget: turnBudget(),
 					messages: [],
 					reasoningLevel: "none",
 					system: "",
@@ -132,7 +145,7 @@ export async function composeTurnRunner(deps: ComposeDeps): Promise<Composition>
 
 	const answer = createAnswerService({
 		db,
-		budget: () => budgetFor(db, DEFAULT_ENDPOINT_ID, probe.modelId, INPUT_RESERVE_TOKENS),
+		budget: turnBudget,
 		transport,
 	});
 	return { answer, turn: runner };

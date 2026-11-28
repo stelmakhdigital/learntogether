@@ -105,7 +105,12 @@ test("minimal correct arguments validate clean", () => {
 test("unknown field is caught by every tool", () => {
 	for (const name of TOOL_NAMES) {
 		const args = { ...VALID_ARGS[name], unexpected_field: "мусор" };
-		assert.deepEqual(problems(name, args), ['$: unknown field "unexpected_field"'], `${name}: leaked extra field`);
+		// The refusal names the fields that do exist, so a retry can actually fix it.
+		assert.match(
+			problems(name, args)[0] ?? "",
+			/^\$: unknown field "unexpected_field", здесь есть поля /,
+			`${name}: leaked extra field`,
+		);
 	}
 });
 

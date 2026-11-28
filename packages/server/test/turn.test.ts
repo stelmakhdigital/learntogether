@@ -349,5 +349,11 @@ test("budget comes from a measured window, never from a guess", () => {
 	insert(3000, 1024);
 	assert.throws(() => budgetFor(db, "local", "qwen", 2000), /слишком мало/);
 
+	// No reported cap is not permission to invent the server's: the caller states the
+	// allowance and the budget says it back (live vLLM 2026-11-29: no cap reported).
+	insert(262144, null);
+	assert.deepEqual(budgetFor(db, "local", "qwen", 1536), { input: 259584, output: 1024 });
+	assert.deepEqual(budgetFor(db, "local", "qwen", 1536, 4096), { input: 256512, output: 4096 });
+
 	assert.throws(() => budgetFor(db, "local", "нет-такой", 2000), /не пробирована/);
 });

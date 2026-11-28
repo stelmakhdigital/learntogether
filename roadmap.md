@@ -9,7 +9,7 @@
 - [x] `better-sqlite3`: FTS5 есть в готовой сборке, `db.loadExtension()` работает, prebuilds внутри tarball — установка без node-gyp. Ограничение: glibc >= 2.34
 - [x] Кандидаты OS keyring: `@napi-rs/keyring` 2.x активен, Credential Manager и Keychain без системных зависимостей, Linux по D-Bus; keytar и npm `secret-service` мертвы
 - [x] Токенизатор: `tokenizers-wasm` считает Qwen2/Qwen3 и Llama 3.x точно, 7-14M ток/с; погрешность `chars/4` измерена (русский занижает в 1.3 раза, LaTeX в 1.7)
-- [ ] Живые сверки на целевых серверах: `prompt_eval_count` (Ollama) и `POST /tokenize` (llama.cpp, vLLM) против нашей оценки, наличие `/v1/embeddings` — на этой машине серверы не установлены
+- [ ] Живые сверки на целевых серверах: `prompt_eval_count` (Ollama) и наличие `/v1/embeddings` — Ollama на этой машине не установлена. llama.cpp сверен (`docs/probes/2026-11-25-llama-cpp.md`, `/apply-template` + `/tokenize` против `usage`, расхождение 0); vLLM сверен 2026-11-29 (`docs/probes/2026-11-29-vllm.md`): `/apply-template` нет, точный размер хода берётся из `usage.prompt_tokens` того же запроса (D-072)
 - [ ] `tokenizers-wasm` в версии release candidate: следим за API, план на случай переезда на стабильную версию
 - [x] Эталон FSRS: официального файла test-vectors у организации нет; фактические эталоны — зашитые векторы рейтингов и интервалов в py-fsrs и ts-fsrs, дефолтные веса сверяются поэлементно
 - [x] Различия wire-формата tool calling у Ollama / llama.cpp / vLLM / LM Studio / OpenAI / Anthropic — сводка в `docs/tool-contracts.md` и в решениях D-024…D-029

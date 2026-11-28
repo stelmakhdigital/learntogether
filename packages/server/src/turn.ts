@@ -192,7 +192,12 @@ class ActiveTurn implements TurnHandle {
 			// back to the call once. The retry gets a fresh context from the database, so
 			// no half-finished tool exchange is replayed.
 			for (let retry = 0; retry < CHECK_RETRIES; retry += 1) {
-				const words = result.stop === "end" ? (deps.unmetCheck?.(this.sessionId) ?? null) : null;
+				// A turn that ran out of steps is exactly as capable of leaving a shown
+				// step uncheckes as one that stopped talking: the state is in the database
+				// and the retry rebuilds its context from there (live 2026-11-29: the turn
+				// ended on "length" right after present_step).
+				const owed = result.stop === "end" || result.stop === "length";
+				const words = owed ? (deps.unmetCheck?.(this.sessionId) ?? null) : null;
 				if (words === null || this.controller.signal.aborted) break;
 				const base = await deps.buildRequest(this.sessionId);
 				const again = await runTurn({
@@ -220,6 +225,13 @@ class ActiveTurn implements TurnHandle {
 }
 
 
+/** Tokens one teacher turn may spend on its answer when the server reports no output
+ *  cap of its own. Our number, not a measurement of the server: it has to cover a
+ *  step of speech plus its tool call, and on a small window it competes with the
+ *  lesson's input. A model that thinks before answering spends it faster — raise it
+ *  through LTH_OUTPUT_TOKENS rather than by changing this constant. */
+export const DEFAULT_OUTPUT_ALLOWANCE = 1024;
+
 /** Budget from a measured context window. An unmeasured model gets no turn: the
  *  alternative is a guessed number, and a guessed number overflows the server. */
 export function budgetFor(
@@ -227,6 +239,7 @@ export function budgetFor(
 	endpointId: string,
 	modelId: string,
 	reserve: number,
+	allowance = DEFAULT_OUTPUT_ALLOWANCE,
 ): { input: number; output: number } {
 	const row = db
 		.prepare("SELECT context_tokens, max_output_tokens FROM model_info WHERE endpoint_id = ? AND model_id = ?")
@@ -235,7 +248,7 @@ export function budgetFor(
 	if (row.context_tokens === null) {
 		throw new Error(`размер контекста ${endpointId}/${modelId} не измерен: измерь его или задай вручную`);
 	}
-	const output = row.max_output_tokens ?? 1024;
+	const output = row.max_output_tokens ?? allowance;
 	const input = row.context_tokens - reserve - output;
 	if (input < 1024) {
 		throw new Error(`для ${endpointId}/${modelId} после резерва остаётся ${input} токенов входа — слишком мало для урока`);
