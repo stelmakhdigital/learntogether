@@ -454,3 +454,39 @@ button:focus-visible {
 	color: #d1495b;
 	font-size: 0.85rem;
 }
+
+/* The map: the canvas is the screen, so it takes the height and the toolbar floats
+   above it instead of pushing the drawing down. */
+.map {
+	display: flex;
+	flex-direction: column;
+	gap: 0.6rem;
+}
+
+.map__toolbar {
+	align-items: center;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.4rem;
+}
+
+.map__count {
+	color: var(--muted, #8b8b93);
+	font-size: 0.85rem;
+	margin-left: auto;
+}
+
+.map__canvas {
+	background: rgba(255, 255, 255, 0.02);
+	border: 1px solid rgba(255, 255, 255, 0.08);
+	border-radius: 8px;
+	cursor: grab;
+	height: 60vh;
+	touch-action: none;
+	width: 100%;
+}
+
+.map__canvas:focus-visible {
+	outline: 2px solid #3f7d5c;
+	outline-offset: 2px;
+}

@@ -10,6 +10,12 @@ import Fastify, { type FastifyError, type FastifyInstance, type FastifyReply, ty
 import {
 	appendEntry,
 	countClaims,
+	graphEdges,
+	graphSettings,
+	hideNode,
+	nodePositions,
+	saveGraphSetting,
+	saveNodePositions,
 	createSession,
 	entries,
 	exportAll,
@@ -51,6 +57,10 @@ const POLL_MS = 200;
 const HEARTBEAT_MS = 15_000;
 const ENTRY_PAGE = 200;
 const LIMIT_MAX = 500;
+/** Nodes one map request may carry. Ten thousand is already more than a screen shows
+ *  at once; beyond it the answer would be the transfer, not the graph. */
+const MAP_MAX = 10_000;
+const MAP_DEFAULT = 2_000;
 
 function bearerOf(header: string | undefined): string | null {
 	const match = /^Bearer (.+)$/i.exec(header ?? "");
@@ -501,6 +511,81 @@ export function createApp(deps: AppDeps): FastifyInstance {
 			const reason = error instanceof Error ? error.message : String(error);
 			return reply.code(400).send({ error: `поиск не удался: ${reason}` });
 		}
+	});
+
+	// The map: nodes with where they were put, the edges between them and the knobs of
+	// the view. Positions belong to the reading of the graph, not to its logic, so the
+	// teacher's context never reads them (D-079).
+	app.get<{ Querystring: { limit?: string } }>("/graph/map", (request, reply) => {
+		const limit = parseUnsigned(request.query.limit, "limit", MAP_MAX);
+		if (!limit.ok) return reply.code(400).send({ error: limit.error });
+		const size = limit.value === null || limit.value < 1 ? MAP_DEFAULT : Math.min(limit.value, MAP_MAX);
+		// Positions are read once for the whole map: asking per node would walk the table
+		// once per node and make the map slow exactly on the graphs that need a map.
+		const positions = nodePositions(db);
+		const nodes = listClaims(db, { limit: size }).map((claim) => {
+			const position = positions.get(claim.id);
+			return {
+				...(position === undefined ? {} : { hidden: position.hidden, x: position.x, y: position.y }),
+				id: claim.id,
+				text: claim.text,
+			};
+		});
+		return {
+			edges: graphEdges(db, nodes.map((node) => node.id)),
+			hidden: nodes.filter((node) => node.hidden === true).length,
+			nodes,
+			settings: graphSettings(db),
+			total: countClaims(db),
+		};
+	});
+
+	// A drag saves the nodes it moved. One request per gesture: a save per pixel would
+	// write the same database thousand times while the pointer is down.
+	app.post<{ Body: { positions?: unknown } }>("/graph/positions", (request, reply) => {
+		const body = request.body as { positions?: unknown } | null;
+		if (!Array.isArray(body?.positions)) return reply.code(400).send({ error: "нужен массив positions" });
+		const positions: { nodeId: string; x: number; y: number }[] = [];
+		for (const item of body!.positions as unknown[]) {
+			const row = item as Record<string, unknown>;
+			if (typeof row.nodeId !== "string" || typeof row.x !== "number" || typeof row.y !== "number") {
+				return reply.code(400).send({ error: "каждая позиция — это nodeId, x и y" });
+			}
+			positions.push({ nodeId: row.nodeId, x: row.x, y: row.y });
+		}
+		if (positions.length > MAP_MAX) return reply.code(400).send({ error: `за один раз не больше ${MAP_MAX} позиций` });
+		try {
+			saveNodePositions(db, positions);
+		} catch (error) {
+			return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) });
+		}
+		return { saved: positions.length };
+	});
+
+	app.post<{ Body: { nodeId?: unknown; hidden?: unknown } }>("/graph/node/hidden", (request, reply) => {
+		const body = request.body as { nodeId?: unknown; hidden?: unknown } | null;
+		if (typeof body?.nodeId !== "string" || typeof body.hidden !== "boolean") {
+			return reply.code(400).send({ error: "нужны nodeId и hidden (да/нет)" });
+		}
+		try {
+			hideNode(db, body.nodeId, body.hidden);
+		} catch (error) {
+			return reply.code(404).send({ error: error instanceof Error ? error.message : String(error) });
+		}
+		return { hidden: body.hidden, nodeId: body.nodeId };
+	});
+
+	app.post<{ Body: { key?: unknown; value?: unknown } }>("/graph/setting", (request, reply) => {
+		const body = request.body as { key?: unknown; value?: unknown } | null;
+		if (typeof body?.key !== "string" || typeof body.value !== "string") {
+			return reply.code(400).send({ error: "нужны key и value строками" });
+		}
+		try {
+			saveGraphSetting(db, body.key, body.value);
+		} catch (error) {
+			return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) });
+		}
+		return { key: body.key, value: body.value };
 	});
 
 	app.get<{ Params: { id: string } }>("/graph/:id", (request, reply) => {

@@ -1,7 +1,7 @@
 import { SCREEN_STATES } from "./states.ts";
 import type { ScreenState } from "./states.ts";
 
-export type ScreenId = "session" | "library" | "review" | "settings";
+export type ScreenId = "graph" | "library" | "review" | "session" | "settings";
 
 export interface Screen {
 	title: string;
@@ -13,6 +13,7 @@ export interface Screen {
 export const SCREENS: Record<ScreenId, Screen> = {
 	session: { title: "Сессия", states: [...SCREEN_STATES] },
 	library: { title: "Библиотека", states: [...SCREEN_STATES] },
+	graph: { title: "Карта", states: [...SCREEN_STATES] },
 	review: { title: "Повторения", states: [...SCREEN_STATES] },
 	settings: { title: "Настройки", states: [...SCREEN_STATES] },
 };

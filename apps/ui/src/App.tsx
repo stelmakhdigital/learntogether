@@ -6,6 +6,7 @@ import { StateView } from "./states.ts";
 import { SCREENS } from "./screens.ts";
 import type { ScreenId } from "./screens.ts";
 import { Chat } from "./Chat.tsx";
+import { Graph } from "./Graph.tsx";
 import { Library } from "./Library.tsx";
 import { Review } from "./Review.tsx";
 
@@ -61,6 +62,8 @@ export function App(): ReactNode {
 				<Review onStart={(id) => openSession(id, "practice")} />
 			) : screenId === "library" ? (
 				<Library onOpenSession={(id) => openSession(id, "teach")} />
+			) : screenId === "graph" ? (
+				<Graph onOpenSession={(id) => openSession(id, "teach")} />
 			) : (
 				<section className="app__demo" aria-label="Демонстрация состояний">
 					<h2 className="app__subtitle">Состояние экрана</h2>

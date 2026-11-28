@@ -321,7 +321,9 @@ export function listClaims(db: Database.Database, input: { limit?: number; offse
 	const limit = input.limit ?? 50;
 	const offset = input.offset ?? 0;
 	const rows = db
-		.prepare("SELECT * FROM claim ORDER BY updated_at DESC, id LIMIT ? OFFSET ?")
+		// rowid breaks a tie inside the same millisecond: ordering by id would order by
+		// a random uuid and the "newest first" page would shuffle between requests.
+		.prepare("SELECT * FROM claim ORDER BY updated_at DESC, rowid DESC LIMIT ? OFFSET ?")
 		.all(limit, offset) as Record<string, unknown>[];
 	return rows.map(rowToClaim);
 }

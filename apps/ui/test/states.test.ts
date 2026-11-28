@@ -19,7 +19,9 @@ test("the state list matches the documented contract", () => {
 });
 
 test("every screen in the registry declares all six states", () => {
-	assert.deepEqual(Object.keys(SCREENS).sort(), ["library", "review", "session", "settings"]);
+	// The list is pinned on purpose: a new screen has to be looked at, not merely
+	// rendered, and adding it here is that look.
+	assert.deepEqual(Object.keys(SCREENS).sort(), ["graph", "library", "review", "session", "settings"]);
 	for (const id of Object.keys(SCREENS) as ScreenId[]) {
 		const screen = SCREENS[id];
 		assert.ok(screen.title.length > 0, `${id}: screen has no title`);

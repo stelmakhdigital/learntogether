@@ -24,7 +24,7 @@ interface Chain {
 	premiseIds: string[];
 }
 
-interface Reading {
+export interface Reading {
 	aliases: string[];
 	chains: Chain[];
 	claim: Claim;
@@ -60,7 +60,7 @@ function ChainLine({ chain, role }: { chain: Chain; role: "conclusion" | "premis
 	);
 }
 
-function NodeDetail({ reading, onOpen }: { reading: Reading; onOpen: (id: string) => void }): ReactNode {
+export function NodeDetail({ reading, onOpen }: { reading: Reading; onOpen: (id: string) => void }): ReactNode {
 	const wording =
 		reading.claim.text.length > LONG_TEXT
 			? <details className="graph__long"><summary>{reading.claim.text.slice(0, LONG_TEXT)}…</summary><p>{reading.claim.text.slice(LONG_TEXT)}</p></details>

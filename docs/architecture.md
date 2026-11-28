@@ -100,7 +100,7 @@ apps/cli           read-only доступ к данным для внешнег�
 meta                     версия схемы, watermark компакции, идентификаторы профиля
 goal, session, transcript_entry, tool_call
 plan, plan_node, step, check, probe_item
-claim, claim_alias, chain, chain_premise, provenance
+claim, claim_alias, chain, chain_premise, provenance, node_position, graph_setting
 doubt, repeat_item, attempt, side_thread, side_message
 source, source_chunk, coverage
 endpoint, model_info, role_assignment
