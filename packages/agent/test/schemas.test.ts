@@ -10,6 +10,8 @@ const TOOL_NAMES = [
 	"graph_read",
 	"graph_search",
 	"plan_set",
+	"pose_problem",
+	"problem_outcome",
 	"present_step",
 	"probe_record",
 	"record_step",
@@ -50,6 +52,8 @@ const VALID_ARGS: Record<ToolName, Record<string, unknown>> = {
 	},
 	present_step: { step_id: "s1", text: "Сложи 3 и 4, а потом 4 и 3 — результат один и тот же." },
 	graph_read: { id: "claim-1" },
+	pose_problem: { claim_id: "claim-1", kind: "recall", solution: "ответ", statement: "условие" },
+	problem_outcome: { problem_id: "p1", rating: "good", verdict: "correct" },
 	graph_search: { query: "производная скорость" },
 	check_understanding: {
 		step_id: "s1",

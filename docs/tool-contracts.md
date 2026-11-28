@@ -78,8 +78,8 @@
 
 | Инструмент | Назначение | Ключевые поля |
 | --- | --- | --- |
-| `pose_problem` | заявить задачу и эталон до ответа | `kind` (`recall`, `reasoning`, `transfer`), `statement`, `solution`, `claim_refs[]`, `hints[]` |
-| `problem_outcome` | итог разбора | `problem_id`, `verdict`, `rating` (`again`, `hard`, `good`, `easy`), `note` |
+| `pose_problem` | заявить задачу и эталон до ответа; условие не называет тему узла — проверка механическая | `kind` (`recall`, `reasoning`, `transfer`), `statement`, `solution`, `claim_id`, `hints[]` |
+| `problem_outcome` | итог разбора: вердикт и оценка планировщику (D-037 проверяется) | `problem_id`, `verdict`, `rating` (`again`, `hard`, `good`, `easy`), `hint_count`, `note` |
 
 Исполняются сервером, человек не ждёт:
 

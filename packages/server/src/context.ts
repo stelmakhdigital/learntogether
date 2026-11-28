@@ -18,6 +18,7 @@ import {
 	activeSummary,
 	activePlan,
 	findClaimByText,
+	practiceQueue,
 	goalForSession,
 	checksForStep,
 	foldTranscript,
@@ -142,6 +143,21 @@ export function lessonStateBlock(db: Database.Database, sessionId: string): stri
 			);
 		}
 		lines.push(`- ${parts.join(" | ")}`);
+	}
+
+	// Practice items of this session: the teacher needs the item id to rate a
+	// problem against the right node and form, and the queue order is the method's
+	// (doubt first, then what is due).
+	// What practice owes right now: due items and open doubts. Brand-new nodes are
+	// left out — a fresh lesson would otherwise read its own accepted steps back to
+	// itself as practice to do.
+	const queue = practiceQueue(db, { limit: 5 }).filter((item) => item.hasDoubt || (item.dueAt !== null && !item.early));
+	if (queue.length > 0) {
+		lines.push(
+			`- практика: ${queue
+				.map((item) => `${item.claimText} [${item.method}${item.hasDoubt ? ", сомнение" : ""}${item.early ? ", не созрело" : ""}]`)
+				.join("; ")}`,
+		);
 	}
 
 	const held = probes.filter((probe) => probe.state === "held");

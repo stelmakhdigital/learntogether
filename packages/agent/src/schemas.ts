@@ -248,6 +248,52 @@ export const RAW_TOOL_SCHEMAS: readonly RawTool[] = [
 			},
 		},
 	},
+	{
+		name: "pose_problem",
+		description:
+			"Заявить задачу практики: условие, эталон решения и подсказки, которые будут затухать. Эталон записывается до ответа ученика. Условие не имеет права называть тему узла — с таким условием измеряется узнавание, а не припоминание.",
+		parameters: {
+			type: "object",
+			additionalProperties: false,
+			required: ["claim_id", "kind", "statement", "solution"],
+			properties: {
+				claim_id: { ...idField, description: "Узел графа, который задача проверяет." },
+				kind: {
+					type: "string",
+					enum: ["recall", "reasoning", "transfer"],
+					description: "Что измеряем: припоминание формулировки, рассуждение или перенос на новый сюжет.",
+				},
+				statement: { type: "string", minLength: 1, description: "Условие: сюжет, а не название темы." },
+				solution: { type: "string", minLength: 1, description: "Эталон: что считается верным ответом." },
+				hints: {
+					type: "array",
+					items: { type: "string", minLength: 1 },
+					description: "Подсказки в порядке затухания: первой та, что оставляет ученику больше хода.",
+				},
+			},
+		},
+	},
+	{
+		name: "problem_outcome",
+		description:
+			"Итог разбора задачи: вердикт и оценка планировщику. Верхние оценки запрещены, если ответ по существу неверен или дан с подсказки.",
+		parameters: {
+			type: "object",
+			additionalProperties: false,
+			required: ["problem_id", "verdict", "rating"],
+			properties: {
+				problem_id: idField,
+				verdict: { type: "string", enum: ["correct", "incorrect", "partial"] },
+				rating: { type: "string", enum: ["again", "hard", "good", "easy"] },
+				hint_count: { type: "integer", minimum: 0, description: "Сколько подсказок понадобилось." },
+				note: {
+					type: "string",
+					minLength: 1,
+					description: "Где именно свернуло не туда рассуждение — ученику показывается это, а не «неправильно».",
+				},
+			},
+		},
+	},
 ];
 
 function canonicalizeAll(raws: readonly RawTool[]): Record<string, CanonicalTool> {
