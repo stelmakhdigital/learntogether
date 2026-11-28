@@ -31,6 +31,7 @@ function makeConfig(overrides: Partial<Config> = {}): Config {
 		language: "ru",
 		accessToken: null,
 		source: null,
+		model: null,
 		exportDir: path.join(tmpdir(), "learntogether-unused"),
 		...overrides,
 	};

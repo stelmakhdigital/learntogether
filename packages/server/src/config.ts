@@ -24,6 +24,19 @@ export interface Config {
 	source: string | null;
 	/** Directory the readable export is written to, derived from the data dir. */
 	exportDir: string;
+	/** Teacher endpoint, or null when no model is configured: turn routes then
+	 *  answer 503 instead of pretending a lesson can run. */
+	model: ModelSettings | null;
+}
+
+/** One model endpoint. The api key is env-only (D-012): key material never
+ *  lands in the settings file; the OS key store arrives with the multi-profile
+ *  stage-2 item and is not silently substituted by the file. */
+export interface ModelSettings {
+	/** Server root without the "/v1" segment, e.g. "http://127.0.0.1:8123". */
+	baseUrl: string;
+	model: string;
+	apiKey: string | null;
 }
 
 export const DEFAULT_PORT = 8765;
@@ -106,7 +119,37 @@ export function loadConfig(
 		accessToken: token === undefined || token === "" ? null : token,
 		source,
 		exportDir: paths.exportDir,
+		model: readModel(env, stored, file),
 	};
+}
+
+/** Model endpoint: settings file first, environment on top. A half-configured
+ *  model (url without id or the reverse) is an error naming both keys: guessing
+ *  the missing half is exactly the silent fallback D-006 refused. */
+function readModel(
+	env: NodeJS.ProcessEnv,
+	stored: Record<string, unknown>,
+	file: string,
+): ModelSettings | null {
+	const storedModel =
+		stored.model !== null && typeof stored.model === "object" && !Array.isArray(stored.model)
+			? (stored.model as Record<string, unknown>)
+			: {};
+	const baseUrl = env.LTH_MODEL_URL ?? (typeof storedModel.url === "string" ? storedModel.url : "");
+	const model = env.LTH_MODEL_ID ?? (typeof storedModel.id === "string" ? storedModel.id : "");
+	const key = env.LTH_MODEL_API_KEY;
+	if (baseUrl === "" && model === "") return null;
+	if (baseUrl === "") {
+		throw new Error(`модель задана (${model}), а её адрес нет: задай model.url в ${file} или LTH_MODEL_URL`);
+	}
+	if (model === "") {
+		throw new Error(`адрес модели задан (${baseUrl}), а её id нет: задай model.id в ${file} или LTH_MODEL_ID`);
+	}
+	if (!/^https?:\/\//i.test(baseUrl)) {
+		throw new Error(`адрес модели должен начинаться с http:// или https://, получено ${baseUrl}`);
+	}
+	const apiKey = key === undefined || key === "" ? null : key;
+	return { apiKey, baseUrl: baseUrl.replace(/\/+$/, ""), model };
 }
 
 /** What `bind` means for the network. Returns an error text instead of throwing

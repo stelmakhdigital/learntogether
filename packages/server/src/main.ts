@@ -6,7 +6,9 @@ import { existsSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { migrate, openDb } from "@learntogether/data";
 import { createApp } from "./app.ts";
+import { composeTurnRunner } from "./compose.ts";
 import { checkBind, loadConfig, pathsFor, type Config } from "./config.ts";
+import type { TurnRunner } from "./turn.ts";
 
 // Migrations ship next to the data package. The path is resolved from this
 // module, never from the working directory, so any launcher may start us.
@@ -57,10 +59,24 @@ export async function start(env: NodeJS.ProcessEnv = process.env): Promise<numbe
 		return 1;
 	}
 
-	// No turn runner here yet: a transport has to be probed against a real server
-	// first, and inventing one from a config file would be the silent fallback we
-	// refused in D-006. Until adapters land, /sessions/:id/turn answers 503.
-	const app = createApp({ db, config, log });
+	// The turn runner exists only over a probed endpoint (D-006): the probe
+	// measures the window and the tool calling, and a failed probe stops the
+	// startup with its own words. Without a configured model the server still
+	// serves data routes; /sessions/:id/turn answers 503.
+	let turn: TurnRunner | undefined;
+	if (config.model !== null) {
+		try {
+			turn = await composeTurnRunner({ db, log, model: config.model });
+		} catch (error) {
+			fail(textOf(error));
+			db.close();
+			return 1;
+		}
+	} else {
+		log("модель не настроена: хода урока не будет (model.url/id в settings.json или LTH_MODEL_URL/LTH_MODEL_ID)");
+	}
+
+	const app = createApp({ db, config, log, ...(turn === undefined ? {} : { turn }) });
 
 	const stopSignal = (signal: string) => {
 		log(`остановка по ${signal}`);

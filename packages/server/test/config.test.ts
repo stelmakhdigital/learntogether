@@ -55,3 +55,34 @@ test("loopback binds without a token, anything else needs one", () => {
 	const refusal = checkBind(lan);
 	if (!refusal.ok) assert.ok(!refusal.error.includes("s3cr3t"));
 });
+
+test("no model configured gives model: null", () => {
+	assert.equal(config(null).model, null);
+});
+
+test("a model endpoint reads from the file and the environment on top", () => {
+	const fromFile = config('{"model":{"url":"http://127.0.0.1:8080/","id":"llama/qwen"}}');
+	assert.deepEqual(fromFile.model, { apiKey: null, baseUrl: "http://127.0.0.1:8080", model: "llama/qwen" });
+	const fromEnv = config('{"model":{"url":"http://file","id":"file-model"}}', {
+		LTH_MODEL_ID: "env-model",
+		LTH_MODEL_URL: "http://env",
+	});
+	assert.deepEqual(fromEnv.model, { apiKey: null, baseUrl: "http://env", model: "env-model" });
+});
+
+test("a half-configured model names both missing keys instead of guessing", () => {
+	assert.throws(() => config(null, { LTH_MODEL_URL: "http://only-url" }), /model\.id|LTH_MODEL_ID/);
+	assert.throws(() => config(null, { LTH_MODEL_ID: "only-id" }), /model\.url|LTH_MODEL_URL/);
+});
+
+test("a model address without a scheme is refused", () => {
+	assert.throws(() => config(null, { LTH_MODEL_URL: "127.0.0.1:8080", LTH_MODEL_ID: "m" }), /http:/);
+});
+
+test("the api key comes from the environment only, never the file", () => {
+	const withKey = config('{"model":{"url":"http://x","id":"m"}}', { LTH_MODEL_API_KEY: "sk-secret" });
+	assert.equal(withKey.model?.apiKey, "sk-secret");
+	// A key placed in the file must not be picked up: it belongs to the OS store.
+	const fileKey = config('{"model":{"apiKey":"sk-file","id":"m","url":"http://x"}}');
+	assert.equal(fileKey.model?.apiKey, null);
+});

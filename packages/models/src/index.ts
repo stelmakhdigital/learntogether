@@ -4,3 +4,4 @@ export * from "./repair.ts";
 export * from "./schema.ts";
 export * from "./fakeTransport.ts";
 export * from "./openaiCompatible.ts";
+export * from "./probe.ts";
